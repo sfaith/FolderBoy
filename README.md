@@ -1,5 +1,5 @@
 # FolderBoy
-A PowerShell script to clean up leftover empty folders and other non-media detritus after using the bulk rename function in Lidarr.
+A PowerShell script to clean up leftover empty folders and other non-media detritus after using the bulk rename function in Sonarr, Radarr, and Lidarr.
 
 Run in a non-elevated cmd or PowerShell window with "powershell -ExecutionPolicy Bypass -File .\folderboy_dryrun.ps1"
 
