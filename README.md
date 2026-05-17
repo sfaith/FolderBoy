@@ -1,6 +1,6 @@
 # FolderBoy — Media Library Manager
 
-A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy helps you keep your library clean by finding orphaned media, tagging Sonarr series folders with IMDb IDs, and removing folders that contain no recognised media files.
+A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy helps you keep your library clean by finding orphaned media, tagging Sonarr series folders with IMDb IDs, renaming Radarr movie folders to standard format, and removing folders that contain no recognized media files.
 
 ---
 
@@ -24,8 +24,17 @@ Running this before the Orphan Scanner gives the scanner its most reliable resul
 - Automatically rolls back disk renames if the Sonarr API update fails
 - Dry Run mode previews all renames before applying
 
-### 3. Orphan Scanner
-Compares what is on disk against what each \*arr app manages. Produces a categorised report of unrecognised folders, then optionally lets you review and delete them one at a time.
+### 3. Radarr Folder Renamer
+Finds Radarr movie folders that don't match the recommended naming format and renames them on disk, then updates the movie path in Radarr via API so everything stays in sync.
+
+- Supports two target formats: Minimum (`{Movie CleanTitle} ({Release Year})`) and Plex (`{Movie CleanTitle} ({Release Year}) {imdb-{ImdbId}}`)
+- Format is selected once at the start of each run
+- Only renames folders that don't already match the target format
+- Automatically rolls back disk renames if the Radarr API update fails
+- Dry Run mode previews all renames before applying
+
+### 4. Orphan Scanner
+Compares what is on disk against what each \*arr app manages. Produces a categorized report of unrecognized folders, then optionally lets you review and delete them one at a time.
 
 **Matching strategy:**
 
@@ -45,8 +54,8 @@ Compares what is on disk against what each \*arr app manages. Produces a categor
 
 The interactive delete flow lets you review each item individually (`D` delete / `S` skip / `Q` quit), queue deletions, see a size summary, and type `YES` to confirm before anything is removed.
 
-### 4. Full Run
-Runs the Sonarr Folder Tagger first, then the Orphan Scanner. This is the recommended workflow — tagging first maximises ID coverage and gives the scanner its highest confidence results.
+### 5. Full Run
+Runs the Sonarr Folder Tagger first, then the Orphan Scanner. This is the recommended workflow — tagging first maximizes ID coverage and gives the scanner its highest confidence results.
 
 ---
 
@@ -242,11 +251,15 @@ For first-time use on an existing library:
 
 2. **Sonarr Folder Tagger → Live Rename** — apply the renames. Sonarr paths are updated automatically via API.
 
-3. **Orphan Scanner → Scan Only** — review the full report. Investigate `NEEDS REVIEW` items before deciding whether to delete them.
+3. **Radarr Folder Renamer → Dry Run** — review which movie folders would be renamed. Choose Minimum or Plex format.
 
-4. **Orphan Scanner → Scan + Delete** — go through each flagged item, skip what you want to keep, queue what you want to delete, confirm with `YES`.
+4. **Radarr Folder Renamer → Live Rename** — apply the renames. Radarr paths are updated automatically via API.
 
-5. **Use option 4 (Full Run)** for ongoing maintenance — runs the tagger and scanner back-to-back in a single session.
+5. **Orphan Scanner → Scan Only** — review the full report. Investigate `NEEDS REVIEW` items before deciding whether to delete them.
+
+6. **Orphan Scanner → Scan + Delete** — go through each flagged item, skip what you want to keep, queue what you want to delete, confirm with `YES`.
+
+7. **Use option 5 (Full Run)** for ongoing maintenance — runs the Sonarr tagger and scanner back-to-back in a single session.
 
 ---
 
@@ -272,6 +285,7 @@ Every run saves a timestamped log file to the same folder as `FolderBoy.ps1`:
 |---|---|
 | FolderBoy Cleaner | `FolderBoy_YYYYMMDD_HHMMSS.log` |
 | Sonarr Folder Tagger | `FolderBoy_Tagger_YYYYMMDD_HHMMSS.log` |
+| Radarr Folder Renamer | `FolderBoy_RadarrRenamer_YYYYMMDD_HHMMSS.log` |
 | Orphan Scanner | `FolderBoy_Scanner_YYYYMMDD_HHMMSS.log` |
 
 Logs contain the full console output including all renamed, deleted, skipped, and failed items.
@@ -296,7 +310,7 @@ FolderBoy will print clear setup instructions. Copy `FolderBoy.config.example.ps
 **Sonarr API returns 400 Bad Request**
 FolderBoy sends the request body as UTF-8 bytes to handle series with non-ASCII characters in alternate titles. If you still see this error, please open an issue and include the relevant section of the log file.
 
-**Title mismatch warnings in the Tagger**
+**Title mismatch warnings in the Sonarr Tagger**
 The folder name and Sonarr's stored title differ enough that FolderBoy won't rename automatically. Rename the folder manually to match the Sonarr title, then re-run the tagger.
 
 ---

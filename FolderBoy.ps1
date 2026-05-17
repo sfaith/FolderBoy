@@ -6,7 +6,7 @@
 #  media libraries. Includes three tools:
 #
 #    1. FolderBoy Cleaner    -- removes folders that contain no
-#                               recognised media files (filesystem
+#                               recognized media files (filesystem
 #                               only, no *arr API calls required).
 #
 #    2. Sonarr Folder Tagger -- adds {imdb-ttXXXXXXX} ID tags to
@@ -15,7 +15,7 @@
 #
 #    3. Orphan Scanner       -- compares what is on disk against
 #                               what each *arr app manages. Reports
-#                               unrecognised folders by confidence
+#                               unrecognized folders by confidence
 #                               level, with optional interactive
 #                               delete.
 #
@@ -127,7 +127,7 @@ function Get-FolderSizeBytes ([string]$Path) {
     $bytes = (Get-ChildItem -LiteralPath $Path -Recurse -ErrorAction SilentlyContinue |
               Where-Object { -not $_.PSIsContainer } |
               Measure-Object -Property Length -Sum).Sum
-    return if ($bytes) { [long]$bytes } else { [long]0 }
+    if ($bytes) { return [long]$bytes } else { return [long]0 }
 }
 
 function Format-Bytes ([long]$Bytes) {
@@ -382,7 +382,7 @@ function Invoke-SonarrPut ([string]$Endpoint, [object]$Body) {
 }
 
 function Get-CleanTitle ([string]$Title) {
-    # Mirrors Sonarr's title sanitisation:
+    # Mirrors Sonarr's title sanitization:
     # colons become space-dash, forward slash removed,
     # other illegal Windows filename characters removed.
     $clean = $Title -replace ':', ' -'
@@ -392,7 +392,7 @@ function Get-CleanTitle ([string]$Title) {
 }
 
 function Test-TitleMatch ([string]$FolderName, [string]$SonarrTitle) {
-    # Returns $true if the folder name (minus tag blocks) normalises
+    # Returns $true if the folder name (minus tag blocks) normalizes
     # to the same string as the Sonarr title, or matches the title
     # without its disambiguation year.
     # Prevents accidental renames of folders that were manually named
@@ -568,6 +568,232 @@ function Invoke-SonarrTagger {
         Write-Log '  Series with no IMDb ID in Sonarr:' 'Yellow'
         foreach ($s in $noImdbList | Sort-Object) { Write-Log ("    - {0}" -f $s) 'Yellow' }
         Write-Tip 'To add an IMDb ID: open the series in Sonarr > Edit > External IDs'
+    }
+    if ($failedList.Count) {
+        Write-Log ''
+        Write-Log '  Failed renames (require manual attention):' 'Red'
+        foreach ($f in $failedList) { Write-Log ("    - {0}" -f $f) 'Red' }
+    }
+
+    Write-Log ''
+    if (-not $LiveRename) {
+        Write-Log '  Re-run and choose Live Rename to apply these changes.' 'Cyan'
+    } else {
+        Write-Log '  Done.' 'Green'
+    }
+    Write-Log ("  Log saved to: {0}" -f $Script:LogFile) 'Cyan'
+}
+
+
+# ================================================================
+#  TOOL 2.5: RADARR FOLDER RENAMER
+# ================================================================
+function Invoke-RadarrGet ([string]$Endpoint) {
+    $uri = "$($RadarrConfig.BaseUrl.TrimEnd('/'))/api/v3/$Endpoint"
+    try {
+        return Invoke-RestMethod -Uri $uri `
+            -Headers @{ 'X-Api-Key' = $RadarrConfig.ApiKey } `
+            -Method Get -ErrorAction Stop
+    }
+    catch {
+        Write-Log ("  [ERROR] GET {0} -- {1}" -f $uri, $_) 'Red'
+        return $null
+    }
+}
+
+function Invoke-RadarrPut ([string]$Endpoint, [object]$Body) {
+    $uri = "$($RadarrConfig.BaseUrl.TrimEnd('/'))/api/v3/$Endpoint"
+    try {
+        $json  = $Body | ConvertTo-Json -Depth 20 -Compress
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        return Invoke-RestMethod -Uri $uri `
+            -Headers @{ 'X-Api-Key' = $RadarrConfig.ApiKey; 'Content-Type' = 'application/json; charset=utf-8' } `
+            -Method Put -Body $bytes -ErrorAction Stop
+    }
+    catch {
+        Write-Log ("  [ERROR] PUT {0} -- {1}" -f $uri, $_) 'Red'
+        return $null
+    }
+}
+
+function Get-RadarrCleanTitle ([string]$Title) {
+    # Mirrors Radarr's title sanitization:
+    # colons become space-dash, other illegal Windows filename characters removed.
+    $clean = $Title -replace ':', ' -'
+    $clean = $clean -replace '[\/<>"\|\?\*]', ''
+    $clean = $clean -replace '\s+', ' '
+    return $clean.Trim()
+}
+
+function Get-RadarrTargetFolderName ([string]$Title, [int]$Year, [string]$ImdbId, [bool]$UsePlex) {
+    # Minimum: {Movie CleanTitle} ({Release Year})
+    # Plex:    {Movie CleanTitle} ({Release Year}) {imdb-{ImdbId}}
+    $clean = Get-RadarrCleanTitle $Title
+    if ($UsePlex -and $ImdbId) {
+        return "{0} ({1}) {{imdb-{2}}}" -f $clean, $Year, $ImdbId
+    } else {
+        return "{0} ({1})" -f $clean, $Year
+    }
+}
+
+function Invoke-RadarrFolderRenamer {
+    param([bool]$LiveRename = $false)
+
+    Start-Log 'FolderBoy_RadarrRenamer'
+    $modeLabel = if ($LiveRename) { 'Live Rename' } else { 'Dry Run' }
+
+    Write-Log ''
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log ("   Radarr Folder Renamer -- {0}" -f $modeLabel) 'Cyan'
+    Write-Log ('   {0}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) 'Cyan'
+    Write-Log '  ============================================================' 'Cyan'
+
+    if (-not $LiveRename) {
+        Write-Log ''
+        Write-Log '  DRY RUN MODE: No folders will be renamed. Radarr will not be updated.' 'Cyan'
+        Write-Log '  This run previews what WOULD be renamed.' 'Cyan'
+        Write-Log '  Review the output, then re-run and choose Live Rename to apply.' 'Cyan'
+    }
+
+    Write-Log ''
+    Write-Tip 'Radarr Movie Folder Format (minimum): {Movie CleanTitle} ({Release Year})'
+    Write-Tip 'Radarr Movie Folder Format (Plex):    {Movie CleanTitle} ({Release Year}) {imdb-{ImdbId}}'
+    Write-Tip 'Set in Radarr: Settings > Media Management > (show advanced) > Movie Folder Format'
+    Write-Tip 'Guide: https://trash-guides.info/Radarr/Radarr-recommended-naming-scheme/'
+    Write-Log ''
+
+    # Ask user which format to target
+    Write-Log '  Select target folder format:' 'Cyan'
+    Write-Log ''
+    Write-Log '    (1) Minimum  -- {Movie CleanTitle} ({Release Year})'
+    Write-Log '                    Example: The Dark Knight (2008)'
+    Write-Log '    (2) Plex     -- {Movie CleanTitle} ({Release Year}) {imdb-{ImdbId}}'
+    Write-Log '                    Example: The Dark Knight (2008) {imdb-tt0468569}'
+    Write-Log ''
+    do { $formatChoice = Read-Host '  Choice' } until ($formatChoice -in '1','2')
+    $usePlex = ($formatChoice -eq '2')
+
+    if ($usePlex) {
+        Write-Log '  Format: Plex (with IMDb ID tag)' 'Yellow'
+        Write-Log '  Note: Movies with no IMDb ID in Radarr will use minimum format.' 'DarkGray'
+    } else {
+        Write-Log '  Format: Minimum ({Movie CleanTitle} ({Release Year}))' 'Yellow'
+    }
+    Write-Log ''
+
+    if ($LiveRename) {
+        if (-not (Confirm-LiveAction 'This will rename movie folders on disk and update Radarr paths via API.')) { return }
+    }
+
+    Write-Log '  Fetching Radarr library...' 'White'
+    $allMovies = Invoke-RadarrGet 'movie'
+    if (-not $allMovies) {
+        Write-Log '  Could not reach Radarr API. Check BaseUrl and ApiKey in FolderBoy.config.ps1.' 'Red'
+        return
+    }
+    Write-Log ("  Found {0} movies in Radarr." -f $allMovies.Count) 'White'
+    Write-Log ''
+
+    $counts = @{
+        AlreadyCorrect = 0; NoPath = 0; PathMissing = 0
+        Renamed        = 0; Failed = 0; NoYear = 0
+    }
+    $failedList = [System.Collections.Generic.List[string]]::new()
+    $noYearList = [System.Collections.Generic.List[string]]::new()
+
+    Write-SectionHeader 'PROCESSING MOVIES'
+    Write-Log ''
+
+    foreach ($movie in $allMovies | Sort-Object title) {
+        $currentPath = if ($movie.path) { $movie.path.TrimEnd('\').TrimEnd('/') } else { $null }
+        $title       = $movie.title
+        $year        = $movie.year
+        $imdbId      = $movie.imdbId
+        $movieId     = $movie.id
+
+        if (-not $currentPath) { $counts.NoPath++; continue }
+
+        $folderName = Split-Path $currentPath -Leaf
+        $parentDir  = Split-Path $currentPath -Parent
+
+        if ($year -eq 0 -or -not $year) {
+            Write-Log ("  [NO YEAR]    {0} -- skipped, no release year in Radarr" -f $title) 'Yellow'
+            $noYearList.Add($title)
+            $counts.NoYear++
+            continue
+        }
+
+        if (-not (Test-Path -LiteralPath $currentPath)) {
+            Write-Log ("  [MISSING]    {0} -- path not found: {1}" -f $title, $currentPath) 'Yellow'
+            $counts.PathMissing++
+            continue
+        }
+
+        $newFolderName = Get-RadarrTargetFolderName $title $year $imdbId $usePlex
+        $newPath       = Join-Path $parentDir $newFolderName
+
+        if ($folderName -eq $newFolderName) { $counts.AlreadyCorrect++; continue }
+
+        if (-not $LiveRename) {
+            Write-Log ("  [WOULD RENAME]") 'White'
+            Write-Log ("      From : {0}" -f $currentPath) 'White'
+            Write-Log ("      To   : {0}" -f $newPath) 'Cyan'
+            $counts.Renamed++
+        } else {
+            if ((Test-Path -LiteralPath $newPath) -and ($newPath -ne $currentPath)) {
+                Write-Log ("  [CONFLICT]   {0} -- target folder already exists." -f $title) 'Red'
+                $failedList.Add(("{0} -- target folder already exists" -f $title))
+                $counts.Failed++
+                continue
+            }
+            try {
+                Rename-Item -LiteralPath $currentPath -NewName $newFolderName -ErrorAction Stop
+                $movie.path = $newPath
+                $result = Invoke-RadarrPut "movie/$movieId" $movie
+                if ($result) {
+                    Write-Log ("  [RENAMED]") 'Green'
+                    Write-Log ("      From : {0}" -f $currentPath) 'Green'
+                    Write-Log ("      To   : {0}" -f $newPath) 'Green'
+                    $counts.Renamed++
+                } else {
+                    Write-Log ("  [API FAIL]   {0} -- folder renamed but Radarr update failed. Rolling back." -f $title) 'Red'
+                    try {
+                        Rename-Item -LiteralPath $newPath -NewName $folderName -ErrorAction Stop
+                        Write-Log ("               Rollback successful.") 'Yellow'
+                    } catch {
+                        Write-Log ("               Rollback FAILED. Folder is now at: {0}" -f $newPath) 'Red'
+                        Write-Log ("               Manually update the path in Radarr for this movie.") 'Red'
+                    }
+                    $failedList.Add(("{0} -- Radarr API update failed" -f $title))
+                    $counts.Failed++
+                }
+            } catch {
+                Write-Log ("  [ERROR]      {0} -- {1}" -f $title, $_) 'Red'
+                $failedList.Add(("{0} -- {1}" -f $title, $_))
+                $counts.Failed++
+            }
+        }
+    }
+
+    Write-Log ''
+    Write-SectionHeader 'SUMMARY'
+    Write-Log ''
+
+    if ($LiveRename) {
+        Write-Log ("  Renamed          : {0}  movies" -f $counts.Renamed) 'Green'
+        Write-Log ("  Failed           : {0}  movies" -f $counts.Failed) $(if ($counts.Failed) { 'Red' } else { 'Green' })
+    } else {
+        Write-Log ("  Would rename     : {0}  movies" -f $counts.Renamed) 'Cyan'
+    }
+    Write-Log ("  Already correct  : {0}  movies" -f $counts.AlreadyCorrect) 'White'
+    Write-Log ("  No year in Radarr: {0}  movies (skipped)" -f $counts.NoYear) 'Yellow'
+    Write-Log ("  Path missing     : {0}  movies (Radarr path not found on disk)" -f $counts.PathMissing) 'Yellow'
+
+    if ($noYearList.Count) {
+        Write-Log ''
+        Write-Log '  Movies with no release year in Radarr (cannot rename):' 'Yellow'
+        foreach ($m in $noYearList | Sort-Object) { Write-Log ("    - {0}" -f $m) 'Yellow' }
+        Write-Tip 'To add a release year: open the movie in Radarr > Edit > and verify the correct entry is matched'
     }
     if ($failedList.Count) {
         Write-Log ''
@@ -971,7 +1197,8 @@ function Invoke-OrphanScanner {
 
     Write-Log ''
     Write-Log '  ============================================================' 'Cyan'
-    Write-Log ('   Orphan Scanner -- {0}' -f (if ($WithDelete) { 'Scan + Delete' } else { 'Scan Only' })) 'Cyan'
+    $scanModeLabel = if ($WithDelete) { 'Scan + Delete' } else { 'Scan Only' }
+    Write-Log ("   Orphan Scanner -- {0}" -f $scanModeLabel) 'Cyan'
     Write-Log ('   {0}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) 'Cyan'
     Write-Log '  ============================================================' 'Cyan'
 
@@ -1035,6 +1262,7 @@ function Invoke-OrphanScanner {
 #  MAIN MENU
 # ================================================================
 function Show-MainMenu {
+    param($SessionLog)
     Write-Host ''
     Write-Host '  ============================================================' -ForegroundColor Cyan
     Write-Host '   FolderBoy  |  Media Library Manager' -ForegroundColor Cyan
@@ -1042,10 +1270,20 @@ function Show-MainMenu {
     Write-Host ''
     Write-Host '  (1) FolderBoy Cleaner    -- remove folders with no media files'
     Write-Host '  (2) Sonarr Folder Tagger -- add {imdb-} ID tags to series folders'
-    Write-Host '  (3) Orphan Scanner       -- find media not managed by any *arr app'
-    Write-Host '  (4) Full Run             -- Tagger then Scanner (recommended workflow)'
-    Write-Host '  (5) Exit'
+    Write-Host '  (3) Radarr Folder Renamer -- rename movie folders to standard format'
+    Write-Host '  (4) Orphan Scanner       -- find media not managed by any *arr app'
+    Write-Host '  (5) Full Run             -- Tagger then Scanner (recommended workflow)'
+    Write-Host '  (6) Exit'
     Write-Host ''
+
+    # Session activity log
+    if ($SessionLog.Count -gt 0) {
+        Write-Host '  This session:' -ForegroundColor DarkGray
+        foreach ($entry in $SessionLog) {
+            Write-Host ("    {0}" -f $entry) -ForegroundColor DarkGray
+        }
+        Write-Host ''
+    }
 }
 
 function Select-SubMode ([string]$Prompt, [string[]]$Options) {
@@ -1067,9 +1305,16 @@ function Select-SubMode ([string]$Prompt, [string[]]$Options) {
 # ================================================================
 #  ENTRY POINT
 # ================================================================
+$SessionLog = [System.Collections.Generic.List[string]]::new()
+
+function Add-SessionEntry ([string]$Entry) {
+    $time = Get-Date -Format 'HH:mm'
+    $Script:SessionLog.Add(("[{0}] {1}" -f $time, $Entry))
+}
+
 do {
-    Show-MainMenu
-    do { $menuChoice = Read-Host '  Choice' } until ($menuChoice -in '1','2','3','4','5')
+    Show-MainMenu $SessionLog
+    do { $menuChoice = Read-Host '  Choice' } until ($menuChoice -in '1','2','3','4','5','6')
 
     switch ($menuChoice) {
 
@@ -1078,7 +1323,9 @@ do {
                 'Dry Run     -- preview which folders would be deleted (safe, no changes)'
                 'Live Delete -- permanently delete folders with no media files'
             )
+            $modeStr = if ($mode -eq 2) { 'Live Delete' } else { 'Dry Run' }
             Invoke-FolderBoyCleaner -LiveDelete ($mode -eq 2)
+            Add-SessionEntry ("FolderBoy Cleaner [{0}] -- complete" -f $modeStr)
         }
 
         '2' {
@@ -1091,22 +1338,42 @@ do {
                     'Dry Run     -- preview which folders would be renamed (safe, no changes)'
                     'Live Rename -- rename folders on disk and update Sonarr paths via API'
                 )
+                $modeStr = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-SonarrTagger -LiveRename ($mode -eq 2)
+                Add-SessionEntry ("Sonarr Folder Tagger [{0}] -- complete" -f $modeStr)
             }
         }
 
         '3' {
+            if (-not $RadarrConfig.Enabled) {
+                Write-Host ''
+                Write-Host '  Radarr is disabled in FolderBoy.config.ps1.' -ForegroundColor Yellow
+                Write-Host '  Set Enabled = $true in $RadarrConfig to use this tool.' -ForegroundColor Yellow
+            } else {
+                $mode = Select-SubMode 'Radarr Folder Renamer mode:' @(
+                    'Dry Run     -- preview which folders would be renamed (safe, no changes)'
+                    'Live Rename -- rename folders on disk and update Radarr paths via API'
+                )
+                $modeStr = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
+                Invoke-RadarrFolderRenamer -LiveRename ($mode -eq 2)
+                Add-SessionEntry ("Radarr Folder Renamer [{0}] -- complete" -f $modeStr)
+            }
+        }
+
+        '4' {
             $mode = Select-SubMode 'Orphan Scanner mode:' @(
                 'Scan Only     -- report orphaned folders (safe, no changes)'
                 'Scan + Delete -- report then interactively select folders to delete'
             )
+            $modeStr = if ($mode -eq 2) { 'Scan + Delete' } else { 'Scan Only' }
             Invoke-OrphanScanner -WithDelete ($mode -eq 2)
+            Add-SessionEntry ("Orphan Scanner [{0}] -- complete" -f $modeStr)
         }
 
-        '4' {
+        '5' {
             Write-Host ''
             Write-Host '  Full Run: Sonarr Folder Tagger then Orphan Scanner.' -ForegroundColor Cyan
-            Write-Host '  Running the tagger first maximises ID tag coverage,' -ForegroundColor DarkGray
+            Write-Host '  Running the tagger first maximizes ID tag coverage,' -ForegroundColor DarkGray
             Write-Host '  giving the scanner higher-confidence matches.' -ForegroundColor DarkGray
 
             if ($SonarrConfig.Enabled) {
@@ -1114,7 +1381,9 @@ do {
                     'Dry Run     -- preview renames only (safe, no changes)'
                     'Live Rename -- rename folders and update Sonarr'
                 )
+                $taggerModeStr = if ($taggerMode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-SonarrTagger -LiveRename ($taggerMode -eq 2)
+                Add-SessionEntry ("Sonarr Folder Tagger [{0}] -- complete" -f $taggerModeStr)
             } else {
                 Write-Host '  Sonarr is disabled in config -- skipping tagger.' -ForegroundColor DarkGray
             }
@@ -1123,20 +1392,22 @@ do {
                 'Scan Only     -- report orphans only (safe, no changes)'
                 'Scan + Delete -- report then interactively select folders to delete'
             )
+            $scanModeStr = if ($scanMode -eq 2) { 'Scan + Delete' } else { 'Scan Only' }
             Invoke-OrphanScanner -WithDelete ($scanMode -eq 2)
+            Add-SessionEntry ("Orphan Scanner [{0}] -- complete" -f $scanModeStr)
         }
 
-        '5' {
+        '6' {
             Write-Host ''
             Write-Host '  Goodbye.' -ForegroundColor Cyan
             Write-Host ''
         }
     }
 
-    if ($menuChoice -ne '5') {
+    if ($menuChoice -ne '6') {
         Write-Host ''
         Write-Host '  Press any key to return to the main menu...' -ForegroundColor DarkGray
         $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
     }
 
-} while ($menuChoice -ne '5')
+} while ($menuChoice -ne '6')
