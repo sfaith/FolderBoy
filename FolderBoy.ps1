@@ -617,10 +617,11 @@ function Invoke-RadarrPut ([string]$Endpoint, [object]$Body) {
 }
 
 function Get-RadarrCleanTitle ([string]$Title) {
-    # Mirrors Radarr's title sanitization:
-    # colons become space-dash, other illegal Windows filename characters removed.
-    $clean = $Title -replace ':', ' -'
-    $clean = $clean -replace '[\/<>"\|\?\*]', ''
+    # Mirrors Radarr's {Movie CleanTitle} token behavior:
+    # illegal Windows filename characters are removed entirely.
+    # Radarr folder names use CleanTitle which drops colons, slashes etc.
+    # e.g. "3:10 to Yuma" becomes "310 to Yuma", not "3 -10 to Yuma".
+    $clean = $Title -replace '[:\/<>"\|\?\*]', ''
     $clean = $clean -replace '\s+', ' '
     return $clean.Trim()
 }
