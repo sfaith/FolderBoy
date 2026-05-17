@@ -735,6 +735,18 @@ function Invoke-RadarrFolderRenamer {
 
         if ($folderName -eq $newFolderName) { $counts.AlreadyCorrect++; continue }
 
+        # Soft match: if the only difference between the existing folder name
+        # and the target is the presence of ' - ' separators (e.g. folder has
+        # "13 Hours - The Secret Soldiers of Benghazi" but CleanTitle produces
+        # "13 Hours The Secret Soldiers of Benghazi"), skip the rename.
+        # This preserves existing well-formatted folders from earlier Radarr
+        # conventions without forcing a mass cosmetic rename.
+        # We still rename if the year differs, quality tags are present, or
+        # the title itself is substantively different.
+        $normFolder = ($folderName  -replace ' - ', ' ' -replace '\s+', ' ').Trim()
+        $normTarget = ($newFolderName -replace ' - ', ' ' -replace '\s+', ' ').Trim()
+        if ($normFolder -eq $normTarget) { $counts.AlreadyCorrect++; continue }
+
         if (-not $LiveRename) {
             Write-Log ("  [WOULD RENAME]") 'White'
             Write-Log ("      From : {0}" -f $currentPath) 'White'
