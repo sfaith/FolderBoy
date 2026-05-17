@@ -35,7 +35,8 @@ $FolderBoyPresets = [ordered]@{
     }
     '2' = @{
         Label = 'Movies'
-        Exts  = @('.mkv','.mp4','.avi','.m4v','.mov','.wmv','.ts','.m2ts','.iso')
+        Exts  = @('.mkv','.mp4','.avi','.m4v','.mov','.wmv','.ts','.m2ts','.iso',
+                  '.mpg','.mpeg')        # .mpg and .mpeg for older content
         Paths = @(
             '\\YOUR-SERVER\Movies'       # Replace with your movie root path
             # '\\YOUR-SERVER\Documentaries'
