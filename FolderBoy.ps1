@@ -1,23 +1,31 @@
 # ================================================================
 #  FolderBoy.ps1  |  Media Library Manager
-#  https://github.com/YOUR_USERNAME/FolderBoy
+#  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
-#  media libraries. Includes three tools:
+#  media libraries. Includes five tools:
 #
-#    1. FolderBoy Cleaner    -- removes folders that contain no
-#                               recognized media files (filesystem
-#                               only, no *arr API calls required).
+#    1. FolderBoy Cleaner      -- removes folders that contain no
+#                                 recognized media files (filesystem
+#                                 only, no *arr API calls required).
 #
-#    2. Sonarr Folder Tagger -- adds {imdb-ttXXXXXXX} ID tags to
-#                               Sonarr series folders and keeps
-#                               Sonarr's path in sync via API.
+#    2. Sonarr Folder Tagger   -- adds {imdb-ttXXXXXXX} ID tags to
+#                                 Sonarr series folders and keeps
+#                                 Sonarr's path in sync via API.
 #
-#    3. Orphan Scanner       -- compares what is on disk against
-#                               what each *arr app manages. Reports
-#                               unrecognized folders by confidence
-#                               level, with optional interactive
-#                               delete.
+#    3. Radarr Folder Renamer  -- renames movie folders to match the
+#                                 TRaSH Guides recommended format and
+#                                 updates Radarr paths via API.
+#
+#    4. Orphan Scanner         -- compares what is on disk against
+#                                 what each *arr app manages. Reports
+#                                 unrecognized folders by confidence
+#                                 level, with optional interactive
+#                                 delete.
+#
+#    5. Full Run               -- runs Sonarr Folder Tagger then
+#                                 Orphan Scanner in sequence
+#                                 (recommended workflow).
 #
 #  REQUIREMENTS:
 #    - PowerShell 5.1 or later (built into Windows 10/11/Server)
