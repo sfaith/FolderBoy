@@ -200,8 +200,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 Version numbers reflect development milestones rather than formal releases.
 All versions were developed and tested against:
-- Sonarr v4 (API v3) at http://mediafrenzy:8989
-- Radarr v5 (API v3) at http://mediafrenzy:7878
-- Lidarr v2 (API v1) at http://mediafrenzy:8686
+- Sonarr v4 (API v3) at `http://localhost:8989`
+- Radarr v5 (API v3) at `http://localhost:7878`
+- Lidarr v2 (API v1) at `http://localhost:8686`
 - Windows 10 / PowerShell 5.1
-- Synology NAS accessed via UNC paths (\\Synology\...)
+- NAS accessed via UNC paths (`\\YOUR-SERVER\...`)
