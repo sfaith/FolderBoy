@@ -1016,6 +1016,7 @@ function Invoke-LidarrFolderRenamer {
 # ================================================================
 #  TOOL 5: ORPHAN SCANNER
 # ================================================================
+function Write-OrphanAppSummary ($AppName, $Stats) {
     Write-Log ''
     Write-Log ("  -- {0} Summary --" -f $AppName) 'Yellow'
     Write-Log ("    Not in {0,-8}: {1,4}  folders" -f $AppName, $Stats.NotInArr.Count) $(if ($Stats.NotInArr.Count) { 'Red' } else { 'Green' })
