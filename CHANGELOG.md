@@ -26,13 +26,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - **Orphan Scanner scope selection** — before choosing Scan Only or Scan + Delete,
-  the user now selects which libraries to scan:
-  - All libraries (Radarr, Sonarr, and Lidarr)
-  - Radarr only
-  - Sonarr only
-  - Lidarr only
-  Disabled apps are skipped with a message when selected individually. Full Run
-  always scans all libraries. Scope is shown in the scanner header and session log.
+  the user now selects which libraries to scan: All libraries, Radarr only, Sonarr
+  only, or Lidarr only. Disabled apps are skipped with a message when selected
+  individually. Full Run always scans all libraries. Scope is shown in the scanner
+  header and session log.
 
 ### Fixed
 - **Lidarr Folder Renamer** — trailing periods are now stripped from generated
