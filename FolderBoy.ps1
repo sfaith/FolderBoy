@@ -358,6 +358,8 @@ function Invoke-FolderBoyCleaner {
 
     Write-Log ''
     Write-Log ("  Log saved to: {0}" -f $Script:LogFile) 'Cyan'
+
+    return @{ Label = $label; Paths = $scanPaths }
 }
 
 # ================================================================
@@ -1528,8 +1530,13 @@ do {
                 'Live Delete -- permanently delete folders with no media files'
             )
             $modeStr = if ($mode -eq 2) { 'Live Delete' } else { 'Dry Run' }
-            Invoke-FolderBoyCleaner -LiveDelete ($mode -eq 2)
-            Add-SessionEntry ("FolderBoy Cleaner [{0}] -- complete" -f $modeStr)
+            $cleanerResult = Invoke-FolderBoyCleaner -LiveDelete ($mode -eq 2)
+            $pathSummary = if ($cleanerResult.Paths.Count -eq 1) {
+                $cleanerResult.Paths[0]
+            } else {
+                "{0} paths" -f $cleanerResult.Paths.Count
+            }
+            Add-SessionEntry ("FolderBoy Cleaner [{0}] {1} -- {2} -- complete" -f $modeStr, $cleanerResult.Label, $pathSummary)
         }
 
         '2' {
