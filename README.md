@@ -328,22 +328,27 @@ Logs contain the full console output including all renamed, deleted, skipped, an
 ## Troubleshooting
 
 **Config file not found**
+
 FolderBoy will print clear setup instructions. Copy `FolderBoy.config.example.ps1` to `FolderBoy.config.ps1` and fill in your values.
 
 **"Could not reach API" errors**
+
 - Confirm the `BaseUrl` matches the URL you use to access the app in a browser.
 - Confirm the app is running and reachable from the machine running FolderBoy.
 - Double-check the `ApiKey` — copy it fresh from Settings → General in the app.
 
 **"Path not found" warnings**
+
 - Confirm the path exists and is accessible from the machine running FolderBoy.
 - For UNC paths (`\\SERVER\Share`), verify network access is available.
 - Check for typos or missing leading backslashes in the config.
 
 **Sonarr API returns 400 Bad Request**
+
 FolderBoy sends the request body as UTF-8 bytes to handle series with non-ASCII characters in alternate titles. If you still see this error, please open an issue and include the relevant section of the log file.
 
 **Title mismatch warnings in the Sonarr Folder Renamer**
+
 The folder name and Sonarr's stored title differ enough that FolderBoy won't rename automatically. Rename the folder manually to match the Sonarr title, then re-run the Sonarr Folder Renamer.
 
 ---
