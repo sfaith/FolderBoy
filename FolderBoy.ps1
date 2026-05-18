@@ -1,5 +1,5 @@
 # ================================================================
-#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.1
+#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.2
 #  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
@@ -1380,6 +1380,11 @@ function Invoke-OrphanScanner {
         Write-Log '  SCAN ONLY MODE: No files will be deleted.' 'Cyan'
         Write-Log '  This run reports orphaned folders only.' 'Cyan'
         Write-Log '  Re-run and choose Scan + Delete to act on the results.' 'Cyan'
+    } else {
+        Write-Log ''
+        Write-Log '  SCAN + DELETE MODE: Orphaned folders will be reported,' 'Yellow'
+        Write-Log '  then you will be prompted to review and queue items for deletion.' 'Yellow'
+        Write-Log '  Nothing is deleted until you confirm at the end.' 'Yellow'
     }
 
     Write-Log ''
