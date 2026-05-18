@@ -1,5 +1,5 @@
 # ================================================================
-#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.2
+#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.3
 #  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
@@ -216,6 +216,42 @@ function Confirm-LiveAction ([string]$Warning) {
     Write-Log ''
     return $true
 }
+
+# ================================================================
+#  STARTUP: RESOLVE PATHS FROM *ARR APIs
+#
+#  If a config block has no Paths defined (or an empty array),
+#  FolderBoy fetches root folders from the app's API and uses
+#  those instead. If Paths is defined in config, it takes
+#  precedence and no API call is made for that app.
+#
+#  This runs after all helper functions are defined so that
+#  Invoke-ArrGet is available, but before any tool functions
+#  are called.
+# ================================================================
+function Resolve-ArrPaths ([hashtable]$Config, [string]$AppName) {
+    if (-not $Config.Enabled) { return }
+    if ($Config.Paths -and $Config.Paths.Count -gt 0) {
+        Write-Host ("  {0,-8}  Using {1} path(s) from config" -f $AppName, $Config.Paths.Count) -ForegroundColor DarkGray
+        return
+    }
+    Write-Host ("  {0,-8}  No paths in config -- fetching root folders from API..." -f $AppName) -ForegroundColor DarkGray
+    $rootFolders = Invoke-ArrGet $Config 'rootfolder'
+    if ($rootFolders -and $rootFolders.Count -gt 0) {
+        $Config.Paths = @($rootFolders | ForEach-Object { $_.path.TrimEnd('\').TrimEnd('/') })
+        Write-Host ("  {0,-8}  Found {1} root folder(s): {2}" -f $AppName, $Config.Paths.Count, ($Config.Paths -join ', ')) -ForegroundColor DarkGray
+    } else {
+        Write-Host ("  {0,-8}  Could not fetch root folders -- check BaseUrl and ApiKey in config." -f $AppName) -ForegroundColor Yellow
+        $Config.Paths = @()
+    }
+}
+
+Write-Host ''
+Write-Host '  Resolving library paths...' -ForegroundColor DarkGray
+Resolve-ArrPaths $RadarrConfig 'Radarr'
+Resolve-ArrPaths $SonarrConfig 'Sonarr'
+Resolve-ArrPaths $LidarrConfig 'Lidarr'
+Write-Host ''
 
 # ================================================================
 #  TOOL 1: FOLDERBOY CLEANER

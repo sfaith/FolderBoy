@@ -1,6 +1,6 @@
 # FolderBoy — Media Library Manager
 
-**Version: 0.4.2**
+**Version: 0.4.3**
 
 A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy helps you keep your library clean by renaming series, movie, and artist folders to standard formats, finding orphaned media, and removing folders that contain no recognized media files.
 
@@ -138,7 +138,9 @@ Find your API key in each app under **Settings → General → Security → API 
 
 ### Paths
 
-The `Paths` array lists every root folder that app manages. These must match exactly what the app shows under **Settings → Media Management → Root Folders**. You can have as many paths as you need:
+The `Paths` array is now **optional**. If omitted or left empty, FolderBoy automatically fetches root folders from each app's API at startup. This means paths are always in sync with what the app has configured — no manual maintenance needed.
+
+If you want to override or limit scope (for example, scanning only a subset of your root folders), define `Paths` explicitly:
 
 ```powershell
 $RadarrConfig = @{
@@ -148,7 +150,24 @@ $RadarrConfig = @{
     Paths   = @(
         '\\NAS\Movies'
         '\\NAS\Documentaries'
-        '\\NAS\Comedy'
+    )
+}
+```
+
+**Hybrid approach — start from API paths, then add or remove:**
+If you want the convenience of API-fetched paths but need to include or exclude a specific path, fetch them first and then adjust. The easiest way is to run FolderBoy once with `Paths` omitted, note the paths it reports at startup, then copy them into your config and make your changes:
+
+```powershell
+$RadarrConfig = @{
+    Enabled = $true
+    BaseUrl = 'http://localhost:7878'
+    ApiKey  = 'YOUR_RADARR_API_KEY'
+    Paths   = @(
+        '\\NAS\Movies'          # From API
+        '\\NAS\Documentaries'   # From API
+        '\\NAS\Comedy'          # From API
+        # '\\NAS\Holiday_Movies'  # Excluded -- omit to skip this path
+        '\\ExternalDrive\Films' # Added -- not in Radarr but scan anyway
     )
 }
 ```

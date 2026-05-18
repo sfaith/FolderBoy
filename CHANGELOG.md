@@ -15,6 +15,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.4.3] - 2026-05-17
+
+### Added
+- **Automatic path resolution from \*arr APIs** — the `Paths` array in each \*arr
+  config block is now optional. If omitted or empty, FolderBoy queries the app's
+  `rootfolder` API endpoint at startup and uses those paths automatically. This
+  keeps paths in sync with what each app has configured without any manual
+  maintenance. Explicit `Paths` in config always takes precedence if defined.
+- **Startup path resolution output** — a brief summary is printed at startup
+  showing whether each app's paths came from config or were fetched from the API.
+
+### Changed
+- **`FolderBoy.config.example.ps1`** — `*arr` config blocks now appear before
+  `$FolderBoyPresets` so the presets can reference `$SonarrConfig.Paths` etc.
+  directly. `Paths` is now commented out by default in all three `*arr` blocks,
+  with instructions to uncomment and edit if an override is needed.
+- **README** — Paths section updated to reflect that `Paths` is now optional,
+  with guidance on when to define it explicitly.
+
+---
+
 ## [0.4.2] - 2026-05-17
 
 ### Added
