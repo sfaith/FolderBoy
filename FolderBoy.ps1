@@ -1,5 +1,5 @@
 # ================================================================
-#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.3
+#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.4
 #  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
@@ -256,80 +256,15 @@ Write-Host ''
 # ================================================================
 #  TOOL 1: FOLDERBOY CLEANER
 # ================================================================
-function Invoke-FolderBoyCleaner {
-    param([bool]$LiveDelete = $false)
-
-    Start-Log 'FolderBoy'
-    $modeLabel = if ($LiveDelete) { 'Live Delete' } else { 'Dry Run' }
-
-    Write-Log ''
-    Write-Log '  ============================================================' 'Cyan'
-    Write-Log ("   FolderBoy Cleaner -- {0}" -f $modeLabel) 'Cyan'
-    Write-Log ('   {0}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) 'Cyan'
-    Write-Log '  ============================================================' 'Cyan'
-
-    if (-not $LiveDelete) {
-        Write-Log ''
-        Write-Log '  DRY RUN MODE: No files or folders will be deleted.' 'Cyan'
-        Write-Log '  This run shows you exactly what WOULD be removed.' 'Cyan'
-        Write-Log '  Review the output, then re-run and choose Live Delete to apply.' 'Cyan'
-    }
-
-    Write-Log ''
-    Write-Log '  Select media type:' 'Cyan'
-    Write-Log ''
-    foreach ($key in $FolderBoyPresets.Keys) {
-        Write-Log ("    ({0}) {1}" -f $key, $FolderBoyPresets[$key].Label)
-    }
-    Write-Log ''
-    do { $choice = Read-Host '  Choice' } until ($FolderBoyPresets.Contains($choice))
-    $preset = $FolderBoyPresets[$choice]
-
-    if ($choice -eq ($FolderBoyPresets.Keys | Select-Object -Last 1)) {
-        # Custom preset
-        $customInput = Read-Host '  Enter extensions comma-separated (e.g. mp3,flac,wav)'
-        $mediaExts = $customInput -split ',' | ForEach-Object {
-            $e = $_.Trim().ToLower()
-            if ($e -notmatch '^\.' ) { ".$e" } else { $e }
-        }
-        $label     = 'Custom'
-        $scanPaths = @(Read-Host '  Enter root path to scan')
-    } else {
-        $mediaExts = $preset.Exts
-        $label     = $preset.Label
-        $scanPaths = $preset.Paths
-
-        if ($preset.Paths.Count -gt 1) {
-            Write-Log ''
-            Write-Log '  Select path to scan:' 'Cyan'
-            Write-Log ''
-            for ($i = 0; $i -lt $preset.Paths.Count; $i++) {
-                Write-Log ("    ({0}) {1}" -f ($i + 1), $preset.Paths[$i])
-            }
-            Write-Log ("    ({0}) All paths" -f ($preset.Paths.Count + 1))
-            Write-Log ''
-            do {
-                $pathChoice = Read-Host '  Choice'
-                $pathIdx = 0
-                $validPath = [int]::TryParse($pathChoice, [ref]$pathIdx) -and
-                             $pathIdx -ge 1 -and $pathIdx -le ($preset.Paths.Count + 1)
-            } until ($validPath)
-            if ($pathIdx -le $preset.Paths.Count) {
-                $scanPaths = @($preset.Paths[$pathIdx - 1])
-            }
-        }
-    }
-
-    Write-Log ''
-    Write-Log ("  Scanning for  : {0}" -f $label) 'Yellow'
-    Write-Log ("  Extensions    : {0}" -f ($mediaExts -join ', ')) 'Yellow'
-    foreach ($p in $scanPaths) { Write-Log ("  Path          : {0}" -f $p) 'Yellow' }
-
-    if ($LiveDelete) {
-        if (-not (Confirm-LiveAction 'This will permanently delete folders containing no media files.')) { return }
-    } else {
-        Write-Log ''
-    }
+function Invoke-CleanerScan {
+    # Scans a single preset's paths and returns result stats.
+    # Called by Invoke-FolderBoyCleaner for both single and All modes.
+    param(
+        [bool]$LiveDelete,
+        [string]$Label,
+        [string[]]$ScanPaths,
+        [string[]]$MediaExts
+    )
 
     $toDelete   = [System.Collections.Generic.List[string]]::new()
     $totalBytes = [long]0
@@ -337,9 +272,13 @@ function Invoke-FolderBoyCleaner {
     $deleted    = [System.Collections.Generic.List[string]]::new()
     $failed     = [System.Collections.Generic.List[string]]::new()
 
+    Write-SectionHeader $Label.ToUpper()
+    Write-Log ''
+    Write-Log ("  Extensions    : {0}" -f ($MediaExts -join ', ')) 'Yellow'
+    foreach ($p in $ScanPaths) { Write-Log ("  Path          : {0}" -f $p) 'Yellow' }
     Write-Log ('  ' + ('-' * 66))
 
-    foreach ($root in $scanPaths) {
+    foreach ($root in $ScanPaths) {
         if (-not (Test-Path -LiteralPath $root)) {
             Write-Log ("  [WARN] Path not found: {0}" -f $root) 'Yellow'
             continue
@@ -355,7 +294,7 @@ function Invoke-FolderBoyCleaner {
             if ($LiveDelete -and -not (Test-Path -LiteralPath $folder.FullName)) { continue }
 
             $hasMedia = Get-ChildItem -LiteralPath $folder.FullName -Recurse -ErrorAction SilentlyContinue |
-                        Where-Object { -not $_.PSIsContainer -and $mediaExts -contains $_.Extension.ToLower() } |
+                        Where-Object { -not $_.PSIsContainer -and $MediaExts -contains $_.Extension.ToLower() } |
                         Select-Object -First 1
 
             if (-not $hasMedia) {
@@ -404,8 +343,6 @@ function Invoke-FolderBoyCleaner {
     } else {
         Write-Log ("  Would delete  : {0}  folders" -f $toDelete.Count) 'Yellow'
         Write-Log ("  Reclaimable   : {0} GB  ({1} MB)" -f $totalGB, $totalMB) 'Yellow'
-        Write-Log ''
-        Write-Log '  Re-run and choose Live Delete to apply these changes.' 'Cyan'
     }
 
     if ($extTally.Count) {
@@ -418,7 +355,147 @@ function Invoke-FolderBoyCleaner {
         }
     }
 
+    return @{
+        Deleted    = $deleted.Count
+        Failed     = $failed.Count
+        ToDelete   = $toDelete.Count
+        TotalBytes = $totalBytes
+    }
+}
+
+function Invoke-FolderBoyCleaner {
+    param([bool]$LiveDelete = $false)
+
+    Start-Log 'FolderBoy'
+    $modeLabel = if ($LiveDelete) { 'Live Delete' } else { 'Dry Run' }
+
     Write-Log ''
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log ("   FolderBoy Cleaner -- {0}" -f $modeLabel) 'Cyan'
+    Write-Log ('   {0}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) 'Cyan'
+    Write-Log '  ============================================================' 'Cyan'
+
+    if (-not $LiveDelete) {
+        Write-Log ''
+        Write-Log '  DRY RUN MODE: No files or folders will be deleted.' 'Cyan'
+        Write-Log '  This run shows you exactly what WOULD be removed.' 'Cyan'
+        Write-Log '  Review the output, then re-run and choose Live Delete to apply.' 'Cyan'
+    }
+
+    # Build menu: numbered presets + All Libraries + Custom
+    $customKey = $FolderBoyPresets.Keys | Select-Object -Last 1
+    $allKey    = 'A'
+
+    Write-Log ''
+    Write-Log '  Select media type:' 'Cyan'
+    Write-Log ''
+    foreach ($key in $FolderBoyPresets.Keys) {
+        if ($key -ne $customKey) {
+            Write-Log ("    ({0}) {1}" -f $key, $FolderBoyPresets[$key].Label)
+        }
+    }
+    Write-Log ("    ({0}) All libraries" -f $allKey)
+    Write-Log ("    ({0}) {1}" -f $customKey, $FolderBoyPresets[$customKey].Label)
+    Write-Log ''
+
+    $validKeys = @($FolderBoyPresets.Keys) + $allKey
+    do { $choice = (Read-Host '  Choice').ToUpper() } until ($validKeys -contains $choice)
+
+    # --- ALL LIBRARIES ---
+    if ($choice -eq $allKey) {
+        if ($LiveDelete) {
+            if (-not (Confirm-LiveAction 'This will permanently delete folders containing no media files across ALL libraries.')) { return }
+        } else {
+            Write-Log ''
+        }
+
+        $grandDeleted  = 0; $grandFailed = 0
+        $grandToDelete = 0; $grandBytes  = [long]0
+
+        foreach ($key in $FolderBoyPresets.Keys) {
+            if ($key -eq $customKey) { continue }
+            $p = $FolderBoyPresets[$key]
+            if (-not $p.Paths -or $p.Paths.Count -eq 0) {
+                Write-Log ''
+                Write-Log ("  [{0}] No paths configured -- skipping." -f $p.Label) 'DarkGray'
+                continue
+            }
+            $result = Invoke-CleanerScan -LiveDelete $LiveDelete -Label $p.Label -ScanPaths $p.Paths -MediaExts $p.Exts
+            $grandDeleted  += $result.Deleted
+            $grandFailed   += $result.Failed
+            $grandToDelete += $result.ToDelete
+            $grandBytes    += $result.TotalBytes
+        }
+
+        $grandGB = [math]::Round($grandBytes / 1GB, 2)
+        $grandMB = [math]::Round($grandBytes / 1MB, 1)
+
+        Write-SectionHeader 'OVERALL SUMMARY'
+        Write-Log ''
+        if ($LiveDelete) {
+            Write-Log ("  Deleted   : {0}  folders" -f $grandDeleted) 'Green'
+            Write-Log ("  Failed    : {0}  folders" -f $grandFailed) $(if ($grandFailed) { 'Red' } else { 'Green' })
+            Write-Log ("  Reclaimed : {0} GB  ({1} MB)" -f $grandGB, $grandMB) 'Green'
+        } else {
+            Write-Log ("  Would delete  : {0}  folders" -f $grandToDelete) 'Yellow'
+            Write-Log ("  Reclaimable   : {0} GB  ({1} MB)" -f $grandGB, $grandMB) 'Yellow'
+            Write-Log ''
+            Write-Log '  Re-run and choose Live Delete to apply these changes.' 'Cyan'
+        }
+        Write-Log ''
+        Write-Log ("  Log saved to: {0}" -f $Script:LogFile) 'Cyan'
+        return @{ Label = 'All Libraries'; Paths = @('All') }
+    }
+
+    # --- CUSTOM PRESET ---
+    if ($choice -eq $customKey) {
+        $customInput = Read-Host '  Enter extensions comma-separated (e.g. mp3,flac,wav)'
+        $mediaExts = $customInput -split ',' | ForEach-Object {
+            $e = $_.Trim().ToLower()
+            if ($e -notmatch '^\.' ) { ".$e" } else { $e }
+        }
+        $label     = 'Custom'
+        $scanPaths = @(Read-Host '  Enter root path to scan')
+    } else {
+        # --- SINGLE PRESET ---
+        $preset    = $FolderBoyPresets[$choice]
+        $mediaExts = $preset.Exts
+        $label     = $preset.Label
+        $scanPaths = $preset.Paths
+
+        if ($preset.Paths.Count -gt 1) {
+            Write-Log ''
+            Write-Log '  Select path to scan:' 'Cyan'
+            Write-Log ''
+            for ($i = 0; $i -lt $preset.Paths.Count; $i++) {
+                Write-Log ("    ({0}) {1}" -f ($i + 1), $preset.Paths[$i])
+            }
+            Write-Log ("    ({0}) All paths" -f ($preset.Paths.Count + 1))
+            Write-Log ''
+            do {
+                $pathChoice = Read-Host '  Choice'
+                $pathIdx = 0
+                $validPath = [int]::TryParse($pathChoice, [ref]$pathIdx) -and
+                             $pathIdx -ge 1 -and $pathIdx -le ($preset.Paths.Count + 1)
+            } until ($validPath)
+            if ($pathIdx -le $preset.Paths.Count) {
+                $scanPaths = @($preset.Paths[$pathIdx - 1])
+            }
+        }
+    }
+
+    if ($LiveDelete) {
+        if (-not (Confirm-LiveAction 'This will permanently delete folders containing no media files.')) { return }
+    } else {
+        Write-Log ''
+    }
+
+    $result = Invoke-CleanerScan -LiveDelete $LiveDelete -Label $label -ScanPaths $scanPaths -MediaExts $mediaExts
+
+    Write-Log ''
+    if (-not $LiveDelete) {
+        Write-Log '  Re-run and choose Live Delete to apply these changes.' 'Cyan'
+    }
     Write-Log ("  Log saved to: {0}" -f $Script:LogFile) 'Cyan'
 
     return @{ Label = $label; Paths = $scanPaths }
@@ -1564,7 +1641,9 @@ do {
             )
             $modeStr = if ($mode -eq 2) { 'Live Delete' } else { 'Dry Run' }
             $cleanerResult = Invoke-FolderBoyCleaner -LiveDelete ($mode -eq 2)
-            $pathSummary = if ($cleanerResult.Paths.Count -eq 1) {
+            $pathSummary = if ($cleanerResult.Paths -contains 'All') {
+                'All Libraries'
+            } elseif ($cleanerResult.Paths.Count -eq 1) {
                 $cleanerResult.Paths[0]
             } else {
                 "{0} paths" -f $cleanerResult.Paths.Count

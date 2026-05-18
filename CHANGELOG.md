@@ -15,6 +15,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.4.4] - 2026-05-17
+
+### Added
+- **FolderBoy Cleaner All Libraries mode** — a new `(A) All libraries` option in
+  the Cleaner media type menu runs every non-custom preset in sequence using all
+  configured paths. Mode (Dry Run or Live Delete) is selected once upfront and
+  applied to all presets. Each preset produces its own per-library summary, followed
+  by a combined OVERALL SUMMARY showing total folders and reclaimable space across
+  all libraries. The Custom preset is excluded from All Libraries runs.
+- **`Invoke-CleanerScan` helper** — core scan logic extracted into a reusable
+  function, making the Cleaner code cleaner and enabling the All Libraries mode
+  without duplicating logic.
+
+---
+
 ## [0.4.3] - 2026-05-17
 
 ### Added
