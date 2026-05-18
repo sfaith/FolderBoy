@@ -1,6 +1,6 @@
 # FolderBoy — Media Library Manager
 
-**Version: 0.4.5**
+**Version: 0.4.6**
 
 A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy helps you keep your library clean by renaming series, movie, and artist folders to standard formats, finding orphaned media, and removing folders that contain no recognized media files.
 

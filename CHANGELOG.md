@@ -15,6 +15,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.4.6] - 2026-05-17
+
+### Fixed
+- **`Test-TitleMatch`** — added optional `$Year` parameter (default 0). Previously,
+  a folder named `The Wire (2002)` against a Sonarr title `The Wire` (year stored
+  separately) would produce a false `[MISMATCH]` and be skipped. The function now
+  also compares the folder name against the clean Sonarr title reconstructed with
+  the series year (e.g. `The Wire (2002)`), correctly identifying these as matches.
+  Existing behavior for disambiguation-year titles (`The Twilight Zone (1985)`) and
+  for direct-match titles is unchanged.
+- **`Invoke-SonarrRenamer`** — updated `Test-TitleMatch` call to pass `$year` so
+  the new comparison is active during live renames.
+
+### Added
+- **`FolderBoy_LogicTests.ps1`** — standalone logic test suite (79 tests) covering
+  all pure functions: `Normalize`, `Normalize-Path`, `Get-CleanTitle`,
+  `Get-RadarrCleanTitle`, `Get-LidarrCleanArtistName`, `Get-TargetFolderName`,
+  `Get-RadarrTargetFolderName`, `Test-TitleMatch` (including new `$Year` cases),
+  `Format-Bytes`, Lidarr already-correct logic, Orphan Scanner `@()` fix, log
+  file prefix checks, and 20 code-level feature presence checks.
+
+---
+
 ## [0.4.5] - 2026-05-17
 
 ### Added

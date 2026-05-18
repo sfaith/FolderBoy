@@ -1,5 +1,5 @@
 # ================================================================
-#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.5
+#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.6
 #  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
@@ -603,18 +603,25 @@ function Get-CleanTitle ([string]$Title) {
     return $clean.Trim()
 }
 
-function Test-TitleMatch ([string]$FolderName, [string]$SonarrTitle) {
-    # Returns $true if the folder name (minus tag blocks) normalizes
-    # to the same string as the Sonarr title, or matches the title
-    # without its disambiguation year.
-    # Prevents accidental renames of folders that were manually named
-    # differently from what Sonarr would generate.
-    $folderBase       = ($FolderName -replace '\{[^}]+\}', '' -replace '\s+', ' ').Trim()
-    $normFolder       = Normalize $folderBase
-    $normSonarr       = Normalize (Get-CleanTitle $SonarrTitle)
-    $sonarrNoYear     = (Get-CleanTitle $SonarrTitle) -replace '\s*\(\d{4}\)\s*$', ''
-    $normSonarrNoYear = Normalize $sonarrNoYear
-    return ($normFolder -eq $normSonarr) -or ($normFolder -eq $normSonarrNoYear)
+function Test-TitleMatch ([string]$FolderName, [string]$SonarrTitle, [int]$Year = 0) {
+    # Returns $true if the folder name (minus tag blocks) normalizes to the same
+    # string as the Sonarr title under any of three comparisons:
+    #   1. Direct: folder == Sonarr title (handles most cases)
+    #   2. NoYear: folder == Sonarr title without disambiguation year
+    #              e.g. folder "The Twilight Zone" vs title "The Twilight Zone (1985)"
+    #   3. WithYear: folder == Sonarr clean title + (Year)
+    #              e.g. folder "The Wire (2002)" vs title "The Wire" with year=2002
+    # Prevents accidental renames of folders that differ from what Sonarr would generate.
+    $folderBase         = ($FolderName -replace '\{[^}]+\}', '' -replace '\s+', ' ').Trim()
+    $normFolder         = Normalize $folderBase
+    $clean              = Get-CleanTitle $SonarrTitle
+    $normSonarr         = Normalize $clean
+    $cleanNoYear        = $clean -replace '\s*\(\d{4}\)\s*$', ''
+    $normSonarrNoYear   = Normalize $cleanNoYear
+    $normSonarrWithYear = if ($Year -gt 0) { Normalize "$cleanNoYear ($Year)" } else { '' }
+    return ($normFolder -eq $normSonarr) -or
+           ($normFolder -eq $normSonarrNoYear) -or
+           ($normSonarrWithYear -and $normFolder -eq $normSonarrWithYear)
 }
 
 function Get-TargetFolderName ([string]$Title, [int]$Year, [string]$ImdbId) {
@@ -706,7 +713,7 @@ function Invoke-SonarrRenamer {
             continue
         }
 
-        if (-not (Test-TitleMatch $folderName $title)) {
+        if (-not (Test-TitleMatch $folderName $title $year)) {
             Write-Log ("  [MISMATCH]   {0}" -f $title) 'Yellow'
             Write-Log ("      Folder : {0}" -f $folderName) 'Yellow'
             Write-Log ("      Sonarr : {0}" -f (Get-CleanTitle $title)) 'Yellow'
