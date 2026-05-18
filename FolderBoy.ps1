@@ -1,5 +1,5 @@
 # ================================================================
-#  FolderBoy.ps1  |  Media Library Manager
+#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.1
 #  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
@@ -108,13 +108,22 @@ if ($configErrors.Count) {
     exit
 }
 
+# Stamp each app config with its API version so Invoke-ArrGet/Put work generically.
+$SonarrConfig.ApiVersion = 'v3'
+$RadarrConfig.ApiVersion = 'v3'
+$LidarrConfig.ApiVersion = 'v1'
+
 # ================================================================
 #  SHARED HELPERS
 # ================================================================
 $Script:LogFile = $null
 
 function Start-Log ([string]$Prefix) {
-    $Script:LogFile = Join-Path $PSScriptRoot ("{0}_{1}.log" -f $Prefix, (Get-Date -Format 'yyyyMMdd_HHmmss'))
+    $logDir = Join-Path $PSScriptRoot 'Logs'
+    if (-not (Test-Path -LiteralPath $logDir)) {
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    }
+    $Script:LogFile = Join-Path $logDir ("{0}_{1}.log" -f $Prefix, (Get-Date -Format 'yyyyMMdd_HHmmss'))
 }
 
 function Write-Log {
@@ -159,20 +168,37 @@ function Normalize ([string]$s) {
 }
 
 function Normalize-Path ([string]$p) {
-    return $p.ToLower().TrimEnd('\').TrimEnd('/') -replace '/', '\'
+    return $p.ToLower().TrimEnd('\','/') -replace '/', '\'
 }
 
-function Invoke-ArrApi {
-    param([string]$BaseUrl, [string]$ApiKey, [string]$Endpoint, [string]$ApiVersion = 'v3')
-    $uri = "$($BaseUrl.TrimEnd('/'))/api/$ApiVersion/$Endpoint"
+function Invoke-ArrGet ([hashtable]$Config, [string]$Endpoint) {
+    # Generic GET for any *arr API. Config must have BaseUrl, ApiKey, and ApiVersion.
+    $uri = "$($Config.BaseUrl.TrimEnd('/'))/api/$($Config.ApiVersion)/$Endpoint"
     try {
         return Invoke-RestMethod -Uri $uri `
-            -Headers @{ 'X-Api-Key' = $ApiKey } `
+            -Headers @{ 'X-Api-Key' = $Config.ApiKey } `
             -Method Get -ErrorAction Stop
     }
     catch {
-        Write-Log ("  [ERROR] API call failed: {0}" -f $uri) 'Red'
-        Write-Log ("          {0}" -f $_) 'Red'
+        Write-Log ("  [ERROR] GET {0} -- {1}" -f $uri, $_) 'Red'
+        return $null
+    }
+}
+
+function Invoke-ArrPut ([hashtable]$Config, [string]$Endpoint, [object]$Body) {
+    # Generic PUT for any *arr API. Sends body as UTF-8 bytes to handle
+    # non-ASCII characters in titles (e.g. accented letters in Sonarr
+    # alternate titles that cause 400 Bad Request when sent as plain strings).
+    $uri = "$($Config.BaseUrl.TrimEnd('/'))/api/$($Config.ApiVersion)/$Endpoint"
+    try {
+        $json  = $Body | ConvertTo-Json -Depth 20 -Compress
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        return Invoke-RestMethod -Uri $uri `
+            -Headers @{ 'X-Api-Key' = $Config.ApiKey; 'Content-Type' = 'application/json; charset=utf-8' } `
+            -Method Put -Body $bytes -ErrorAction Stop
+    }
+    catch {
+        Write-Log ("  [ERROR] PUT {0} -- {1}" -f $uri, $_) 'Red'
         return $null
     }
 }
@@ -365,37 +391,6 @@ function Invoke-FolderBoyCleaner {
 # ================================================================
 #  TOOL 2: SONARR FOLDER RENAMER
 # ================================================================
-function Invoke-SonarrGet ([string]$Endpoint) {
-    $uri = "$($SonarrConfig.BaseUrl.TrimEnd('/'))/api/v3/$Endpoint"
-    try {
-        return Invoke-RestMethod -Uri $uri `
-            -Headers @{ 'X-Api-Key' = $SonarrConfig.ApiKey } `
-            -Method Get -ErrorAction Stop
-    }
-    catch {
-        Write-Log ("  [ERROR] GET {0} -- {1}" -f $uri, $_) 'Red'
-        return $null
-    }
-}
-
-function Invoke-SonarrPut ([string]$Endpoint, [object]$Body) {
-    $uri = "$($SonarrConfig.BaseUrl.TrimEnd('/'))/api/v3/$Endpoint"
-    try {
-        $json  = $Body | ConvertTo-Json -Depth 20 -Compress
-        # Send as UTF-8 bytes -- required for series with non-ASCII
-        # characters in alternate titles. Sending as a plain string
-        # causes Sonarr to return 400 Bad Request for these series.
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-        return Invoke-RestMethod -Uri $uri `
-            -Headers @{ 'X-Api-Key' = $SonarrConfig.ApiKey; 'Content-Type' = 'application/json; charset=utf-8' } `
-            -Method Put -Body $bytes -ErrorAction Stop
-    }
-    catch {
-        Write-Log ("  [ERROR] PUT {0} -- {1}" -f $uri, $_) 'Red'
-        return $null
-    }
-}
-
 function Get-CleanTitle ([string]$Title) {
     # Mirrors Sonarr's title sanitization:
     # colons become space-dash, forward slash removed,
@@ -413,11 +408,10 @@ function Test-TitleMatch ([string]$FolderName, [string]$SonarrTitle) {
     # Prevents accidental renames of folders that were manually named
     # differently from what Sonarr would generate.
     $folderBase       = ($FolderName -replace '\{[^}]+\}', '' -replace '\s+', ' ').Trim()
-    $normalize        = { param($s) ($s.ToLower() -replace '[^a-z0-9]', '') }
-    $normFolder       = & $normalize $folderBase
-    $normSonarr       = & $normalize (Get-CleanTitle $SonarrTitle)
+    $normFolder       = Normalize $folderBase
+    $normSonarr       = Normalize (Get-CleanTitle $SonarrTitle)
     $sonarrNoYear     = (Get-CleanTitle $SonarrTitle) -replace '\s*\(\d{4}\)\s*$', ''
-    $normSonarrNoYear = & $normalize $sonarrNoYear
+    $normSonarrNoYear = Normalize $sonarrNoYear
     return ($normFolder -eq $normSonarr) -or ($normFolder -eq $normSonarrNoYear)
 }
 
@@ -463,7 +457,7 @@ function Invoke-SonarrRenamer {
     }
 
     Write-Log '  Fetching Sonarr library...' 'White'
-    $allSeries = Invoke-SonarrGet 'series'
+    $allSeries = Invoke-ArrGet $SonarrConfig 'series'
     if (-not $allSeries) {
         Write-Log '  Could not reach Sonarr API. Check BaseUrl and ApiKey in FolderBoy.config.ps1.' 'Red'
         return
@@ -537,7 +531,7 @@ function Invoke-SonarrRenamer {
             try {
                 Rename-Item -LiteralPath $currentPath -NewName $newFolderName -ErrorAction Stop
                 $series.path = $newPath
-                $result = Invoke-SonarrPut "series/$seriesId" $series
+                $result = Invoke-ArrPut $SonarrConfig "series/$seriesId" $series
                 if ($result) {
                     Write-Log ("  [RENAMED]") 'Green'
                     Write-Log ("      From : {0}" -f $currentPath) 'Green'
@@ -603,34 +597,6 @@ function Invoke-SonarrRenamer {
 # ================================================================
 #  TOOL 3: RADARR FOLDER RENAMER
 # ================================================================
-function Invoke-RadarrGet ([string]$Endpoint) {
-    $uri = "$($RadarrConfig.BaseUrl.TrimEnd('/'))/api/v3/$Endpoint"
-    try {
-        return Invoke-RestMethod -Uri $uri `
-            -Headers @{ 'X-Api-Key' = $RadarrConfig.ApiKey } `
-            -Method Get -ErrorAction Stop
-    }
-    catch {
-        Write-Log ("  [ERROR] GET {0} -- {1}" -f $uri, $_) 'Red'
-        return $null
-    }
-}
-
-function Invoke-RadarrPut ([string]$Endpoint, [object]$Body) {
-    $uri = "$($RadarrConfig.BaseUrl.TrimEnd('/'))/api/v3/$Endpoint"
-    try {
-        $json  = $Body | ConvertTo-Json -Depth 20 -Compress
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-        return Invoke-RestMethod -Uri $uri `
-            -Headers @{ 'X-Api-Key' = $RadarrConfig.ApiKey; 'Content-Type' = 'application/json; charset=utf-8' } `
-            -Method Put -Body $bytes -ErrorAction Stop
-    }
-    catch {
-        Write-Log ("  [ERROR] PUT {0} -- {1}" -f $uri, $_) 'Red'
-        return $null
-    }
-}
-
 function Get-RadarrCleanTitle ([string]$Title) {
     # Mirrors Radarr's {Movie CleanTitle} token behavior:
     # illegal Windows filename characters are removed entirely.
@@ -702,7 +668,7 @@ function Invoke-RadarrFolderRenamer {
     }
 
     Write-Log '  Fetching Radarr library...' 'White'
-    $allMovies = Invoke-RadarrGet 'movie'
+    $allMovies = Invoke-ArrGet $RadarrConfig 'movie'
     if (-not $allMovies) {
         Write-Log '  Could not reach Radarr API. Check BaseUrl and ApiKey in FolderBoy.config.ps1.' 'Red'
         return
@@ -777,7 +743,7 @@ function Invoke-RadarrFolderRenamer {
             try {
                 Rename-Item -LiteralPath $currentPath -NewName $newFolderName -ErrorAction Stop
                 $movie.path = $newPath
-                $result = Invoke-RadarrPut "movie/$movieId" $movie
+                $result = Invoke-ArrPut $RadarrConfig "movie/$movieId" $movie
                 if ($result) {
                     Write-Log ("  [RENAMED]") 'Green'
                     Write-Log ("      From : {0}" -f $currentPath) 'Green'
@@ -841,34 +807,6 @@ function Invoke-RadarrFolderRenamer {
 # ================================================================
 #  TOOL 4: LIDARR FOLDER RENAMER
 # ================================================================
-function Invoke-LidarrGet ([string]$Endpoint) {
-    $uri = "$($LidarrConfig.BaseUrl.TrimEnd('/'))/api/v1/$Endpoint"
-    try {
-        return Invoke-RestMethod -Uri $uri `
-            -Headers @{ 'X-Api-Key' = $LidarrConfig.ApiKey } `
-            -Method Get -ErrorAction Stop
-    }
-    catch {
-        Write-Log ("  [ERROR] GET {0} -- {1}" -f $uri, $_) 'Red'
-        return $null
-    }
-}
-
-function Invoke-LidarrPut ([string]$Endpoint, [object]$Body) {
-    $uri = "$($LidarrConfig.BaseUrl.TrimEnd('/'))/api/v1/$Endpoint"
-    try {
-        $json  = $Body | ConvertTo-Json -Depth 20 -Compress
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
-        return Invoke-RestMethod -Uri $uri `
-            -Headers @{ 'X-Api-Key' = $LidarrConfig.ApiKey; 'Content-Type' = 'application/json; charset=utf-8' } `
-            -Method Put -Body $bytes -ErrorAction Stop
-    }
-    catch {
-        Write-Log ("  [ERROR] PUT {0} -- {1}" -f $uri, $_) 'Red'
-        return $null
-    }
-}
-
 function Get-LidarrCleanArtistName ([string]$Name) {
     # Mirrors Lidarr's artist folder sanitization:
     # colons become space-dash, other illegal Windows filename
@@ -914,7 +852,7 @@ function Invoke-LidarrFolderRenamer {
     }
 
     Write-Log '  Fetching Lidarr library...' 'White'
-    $allArtists = Invoke-LidarrGet 'artist'
+    $allArtists = Invoke-ArrGet $LidarrConfig 'artist'
     if (-not $allArtists) {
         Write-Log '  Could not reach Lidarr API. Check BaseUrl and ApiKey in FolderBoy.config.ps1.' 'Red'
         return
@@ -950,7 +888,12 @@ function Invoke-LidarrFolderRenamer {
         $newFolderName = Get-LidarrCleanArtistName $artistName
         $newPath       = Join-Path $parentDir $newFolderName
 
+        # Treat as already correct if names match exactly, or if the only
+        # difference is a trailing period on the existing folder name.
+        # Windows allows trailing periods but they cause path resolution issues
+        # so we neither rename to add them nor rename to remove them.
         if ($folderName -eq $newFolderName) { $counts.AlreadyCorrect++; continue }
+        if ($folderName.TrimEnd('.') -eq $newFolderName) { $counts.AlreadyCorrect++; continue }
 
         if (-not $LiveRename) {
             Write-Log ("  [WOULD RENAME]") 'White'
@@ -967,7 +910,7 @@ function Invoke-LidarrFolderRenamer {
             try {
                 Rename-Item -LiteralPath $currentPath -NewName $newFolderName -ErrorAction Stop
                 $artist.path = $newPath
-                $result = Invoke-LidarrPut "artist/$artistId" $artist
+                $result = Invoke-ArrPut $LidarrConfig "artist/$artistId" $artist
                 if ($result) {
                     Write-Log ("  [RENAMED]") 'Green'
                     Write-Log ("      From : {0}" -f $currentPath) 'Green'
@@ -1042,7 +985,7 @@ function Invoke-RadarrScan {
     Write-Tip 'Radarr Movie Folder Format (minimum): {Movie CleanTitle} ({Release Year})'
     Write-Tip 'Guide: https://trash-guides.info/Radarr/Radarr-recommended-naming-scheme/'
 
-    $movies = Invoke-ArrApi $RadarrConfig.BaseUrl $RadarrConfig.ApiKey 'movie'
+    $movies = Invoke-ArrGet $RadarrConfig 'movie'
     if (-not $movies) {
         Write-Log '  Could not reach Radarr API. Check BaseUrl and ApiKey in FolderBoy.config.ps1.' 'Red'
         return $null
@@ -1072,8 +1015,7 @@ function Invoke-RadarrScan {
             if ($radarrPaths.ContainsKey((Normalize-Path $folder.FullName))) {
                 $stats.Matched++
             } else {
-                $sz = Get-FolderSize $folder.FullName
-                $stats.NotInArr.Add(@{ Path = $folder.FullName; Size = $sz.Display; Bytes = $sz.Bytes; App = 'Radarr' })
+                $stats.NotInArr.Add(@{ Path = $folder.FullName; App = 'Radarr' })
             }
         }
     }
@@ -1083,6 +1025,8 @@ function Invoke-RadarrScan {
         Write-Log '  [ NOT IN RADARR -- folder path not managed by Radarr ]' 'Red'
         Write-Log '  These folders exist on disk but Radarr has no record of them.' 'DarkGray'
         foreach ($item in $stats.NotInArr | Sort-Object { $_.Path }) {
+            $sz = Get-FolderSize $item.Path
+            $item.Size = $sz.Display; $item.Bytes = $sz.Bytes
             Write-Log ("    {0}  |  {1}" -f $item.Path.PadRight($PathPad), $item.Size.PadLeft(10)) 'Red'
         }
     }
@@ -1101,7 +1045,7 @@ function Invoke-SonarrScan {
     Write-Tip 'Sonarr Series Folder Format should be: {Series TitleYear} {imdb-{ImdbId}}'
     Write-Tip 'Run the Sonarr Folder Renamer (option 2) to add ID tags to existing folders.'
 
-    $series = Invoke-ArrApi $SonarrConfig.BaseUrl $SonarrConfig.ApiKey 'series'
+    $series = Invoke-ArrGet $SonarrConfig 'series'
     if (-not $series) {
         Write-Log '  Could not reach Sonarr API. Check BaseUrl and ApiKey in FolderBoy.config.ps1.' 'Red'
         return $null
@@ -1143,20 +1087,18 @@ function Invoke-SonarrScan {
                 if ($hit) {
                     $stats.Matched++
                 } else {
-                    $sz    = Get-FolderSize $folder.FullName
                     $idStr = (@($imdbId, $tvdbId) | Where-Object { $_ }) -join ' / '
-                    $stats.NotInArr.Add(@{ Path = $folder.FullName; Size = $sz.Display; Bytes = $sz.Bytes; Id = $idStr; App = 'Sonarr' })
+                    $stats.NotInArr.Add(@{ Path = $folder.FullName; Id = $idStr; App = 'Sonarr' })
                 }
             } else {
                 $clean   = ($folder.Name -replace '\{[^}]+\}', '' -replace '\s+', ' ').Trim()
                 $title   = if ($clean -match '^(.+?)\s*\(\d{4}\)') { $Matches[1].Trim() } else { $clean }
                 $nameHit = $titleLookup.ContainsKey((Normalize $title))
-                $sz      = Get-FolderSize $folder.FullName
                 if ($nameHit) {
                     $stats.Matched++
-                    $stats.NameMatched.Add(@{ Path = $folder.FullName; Size = $sz.Display; Bytes = $sz.Bytes; App = 'Sonarr' })
+                    $stats.NameMatched.Add(@{ Path = $folder.FullName; App = 'Sonarr' })
                 } else {
-                    $stats.NeedsReview.Add(@{ Path = $folder.FullName; Size = $sz.Display; Bytes = $sz.Bytes; App = 'Sonarr' })
+                    $stats.NeedsReview.Add(@{ Path = $folder.FullName; App = 'Sonarr' })
                 }
             }
         }
@@ -1167,6 +1109,8 @@ function Invoke-SonarrScan {
         Write-Log '  [ NOT IN SONARR -- ID tag present but not found in Sonarr library ]' 'Red'
         Write-Log '  High confidence orphans. ID tag exists but Sonarr has no matching series.' 'DarkGray'
         foreach ($item in $stats.NotInArr | Sort-Object { $_.Path }) {
+            $sz = Get-FolderSize $item.Path
+            $item.Size = $sz.Display; $item.Bytes = $sz.Bytes
             Write-Log ("    {0}  |  {1}  |  ID: {2}" -f $item.Path.PadRight($PathPad), $item.Size.PadLeft(10), $item.Id) 'Red'
         }
     }
@@ -1176,6 +1120,8 @@ function Invoke-SonarrScan {
         Write-Log '  No ID tag and name did not match any Sonarr series.' 'DarkGray'
         Write-Log '  May be unmanaged media or folders with slightly different names in Sonarr.' 'DarkGray'
         foreach ($item in $stats.NeedsReview | Sort-Object { $_.Path }) {
+            $sz = Get-FolderSize $item.Path
+            $item.Size = $sz.Display; $item.Bytes = $sz.Bytes
             Write-Log ("    {0}  |  {1}" -f $item.Path.PadRight($PathPad), $item.Size.PadLeft(10)) 'Yellow'
         }
     }
@@ -1184,6 +1130,8 @@ function Invoke-SonarrScan {
         Write-Log '  [ NAME MATCHED (no ID tag) -- counted as matched ]' 'DarkGray'
         Write-Log '  Name matched a Sonarr series but no ID tag to confirm. Run the Sonarr Folder Renamer to add tags.' 'DarkGray'
         foreach ($item in $stats.NameMatched | Sort-Object { $_.Path }) {
+            $sz = Get-FolderSize $item.Path
+            $item.Size = $sz.Display; $item.Bytes = $sz.Bytes
             Write-Log ("    {0}  |  {1}" -f $item.Path.PadRight($PathPad), $item.Size.PadLeft(10)) 'DarkGray'
         }
     }
@@ -1203,7 +1151,7 @@ function Invoke-LidarrScan {
     Write-Tip 'Lidarr Album Folder Format should be: {Album Title} {(Album Disambiguation)}'
     Write-Tip 'Guide: https://wiki.servarr.com/lidarr/naming-guide'
 
-    $artists = Invoke-ArrApi $LidarrConfig.BaseUrl $LidarrConfig.ApiKey 'artist' 'v1'
+    $artists = Invoke-ArrGet $LidarrConfig 'artist'
     if (-not $artists) {
         Write-Log '  Could not reach Lidarr API. Check BaseUrl and ApiKey in FolderBoy.config.ps1.' 'Red'
         return $null
@@ -1211,6 +1159,17 @@ function Invoke-LidarrScan {
 
     $artistLookup = @{}
     foreach ($a in $artists) { $artistLookup[(Normalize $a.artistName)] = $a.artistName }
+
+    # Pre-compute punctuation-stripped fuzzy lookup so we don't rebuild
+    # it on every unmatched folder during the scan loop.
+    $fuzzyLookup = @{}
+    foreach ($key in $artistLookup.Keys) {
+        $stripped = $key -replace '[^a-z0-9]', ''
+        if (-not $fuzzyLookup.ContainsKey($stripped)) {
+            $fuzzyLookup[$stripped] = $key
+        }
+    }
+
     Write-Log ("  Library: {0} artists" -f $artists.Count) 'White'
 
     $stats = @{
@@ -1234,20 +1193,15 @@ function Invoke-LidarrScan {
                 $stats.Matched++
             } else {
                 $stripped = $normName -replace '[^a-z0-9]', ''
-                $fuzzyHit = $artistLookup.Keys |
-                    Where-Object { ($_ -replace '[^a-z0-9]', '') -eq $stripped } |
-                    Select-Object -First 1
-                $sz = Get-FolderSize $folder.FullName
-                if ($fuzzyHit) {
+                $fuzzyKey = $fuzzyLookup[$stripped]
+                if ($fuzzyKey) {
                     $stats.NeedsReview.Add(@{
                         Path       = $folder.FullName
-                        Size       = $sz.Display
-                        Bytes      = $sz.Bytes
-                        FuzzyMatch = $artistLookup[$fuzzyHit]
+                        FuzzyMatch = $artistLookup[$fuzzyKey]
                         App        = 'Lidarr'
                     })
                 } else {
-                    $stats.NotInArr.Add(@{ Path = $folder.FullName; Size = $sz.Display; Bytes = $sz.Bytes; App = 'Lidarr' })
+                    $stats.NotInArr.Add(@{ Path = $folder.FullName; App = 'Lidarr' })
                 }
             }
         }
@@ -1257,6 +1211,8 @@ function Invoke-LidarrScan {
         Write-Log ''
         Write-Log '  [ NOT IN LIDARR -- artist folder not managed by Lidarr ]' 'Red'
         foreach ($item in $stats.NotInArr | Sort-Object { $_.Path }) {
+            $sz = Get-FolderSize $item.Path
+            $item.Size = $sz.Display; $item.Bytes = $sz.Bytes
             Write-Log ("    {0}  |  {1}" -f $item.Path.PadRight($PathPad), $item.Size.PadLeft(10)) 'Red'
         }
     }
@@ -1266,6 +1222,8 @@ function Invoke-LidarrScan {
         Write-Log '  Closely resembles a Lidarr artist name but did not match exactly.' 'DarkGray'
         Write-Log '  Parenthetical suffixes in folder names are a common cause.' 'DarkGray'
         foreach ($item in $stats.NeedsReview | Sort-Object { $_.Path }) {
+            $sz = Get-FolderSize $item.Path
+            $item.Size = $sz.Display; $item.Bytes = $sz.Bytes
             Write-Log ("    {0}  |  {1}  |  Possible match: {2}" -f $item.Path.PadRight($PathPad), $item.Size.PadLeft(10), $item.FuzzyMatch) 'Yellow'
         }
     }

@@ -8,6 +8,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Planned
+- Scheduled / unattended execution support (Windows Task Scheduler)
+- Radarr orphan scanner improvements for libraries with parenthetical folder suffixes
+- Media file renaming (FLAC/MP3 cleanup within album folders)
+
+---
+
+## [0.4.1] - 2026-05-17
+
 ### Added
 - **Orphan Scanner scope selection** — before choosing Scan Only or Scan + Delete,
   the user now selects which libraries to scan:
@@ -25,11 +34,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   Artists like `T.I.`, `Dinosaur Jr.`, and `Run‐D.M.C.` whose folders lack the
   trailing period are now correctly treated as already correct rather than flagged
   for rename.
+- **Lidarr Folder Renamer** — folders with a trailing period in their existing name
+  (e.g. `T.I.` on disk) are now also treated as already correct when the generated
+  target name matches after stripping the period. Previously this caused a spurious
+  WOULD RENAME from `T.I.` to `T.I`.
 
-### Planned
-- Scheduled / unattended execution support (Windows Task Scheduler)
-- Radarr orphan scanner improvements for libraries with parenthetical folder suffixes
-- Media file renaming (FLAC/MP3 cleanup within album folders)
+### Changed
+- **Log file location** — logs are now written to a `Logs\` subdirectory next to
+  `FolderBoy.ps1` rather than the script directory root. The folder is created
+  automatically on first run. `.gitignore` updated accordingly.
+- **Code optimization** — six app-specific API helper functions (`Invoke-SonarrGet`,
+  `Invoke-SonarrPut`, `Invoke-RadarrGet`, `Invoke-RadarrPut`, `Invoke-LidarrGet`,
+  `Invoke-LidarrPut`) consolidated into two generic helpers (`Invoke-ArrGet`,
+  `Invoke-ArrPut`). API version stamped onto each app config at startup.
+- **Orphan Scanner performance** — folder size calculation deferred to display time
+  in all three scanners. Size is now only calculated for folders that actually appear
+  in the report, not for every unmatched folder during the scan loop.
+- **Lidarr Scanner performance** — fuzzy artist name lookup pre-computed as a
+  hashtable at library load time rather than iterating all keys per unmatched folder.
+- **`Test-TitleMatch`** — replaced inline normalize scriptblock with the existing
+  global `Normalize` function.
+- **`Normalize-Path`** — double `.TrimEnd()` calls collapsed into a single call.
 
 ---
 
