@@ -1274,7 +1274,7 @@ function Invoke-OrphanInteractiveDelete ($RadarrStats, $SonarrStats, $LidarrStat
     foreach ($item in $notInArr) { $candidates.Add($item) }
     if ($catChoice -in '2','3') { foreach ($item in $needsReview) { $candidates.Add($item) } }
     if ($catChoice -eq '3')     { foreach ($item in $nameMatched) { $candidates.Add($item) } }
-    $candidates = $candidates | Sort-Object { $_.Path }
+    $candidates = @($candidates | Sort-Object { $_.Path })
 
     Write-Log ''
     Write-Log '  ============================================================' 'Cyan'

@@ -8,6 +8,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Orphan Scanner interactive delete** — "REVIEWING N ITEMS" header showed incorrect
+  count when exactly one item was queued for review. `Sort-Object` on a single-item
+  collection returns the item itself rather than a collection, so `.Count` was
+  returning the number of hashtable keys (4) instead of 1. Fixed by wrapping the
+  sort result in `@()` to force an array.
+
 ### Planned
 - Scheduled / unattended execution support (Windows Task Scheduler)
 - Radarr orphan scanner improvements for libraries with parenthetical folder suffixes
