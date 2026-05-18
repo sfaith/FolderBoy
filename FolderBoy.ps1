@@ -225,15 +225,6 @@ function Confirm-LiveAction ([string]$Warning) {
 
 # ================================================================
 #  STARTUP: RESOLVE PATHS FROM *ARR APIs
-#
-#  If a config block has no Paths defined (or an empty array),
-#  FolderBoy fetches root folders from the app's API and uses
-#  those instead. If Paths is defined in config, it takes
-#  precedence and no API call is made for that app.
-#
-#  This runs after all helper functions are defined so that
-#  Invoke-ArrGet is available, but before any tool functions
-#  are called.
 # ================================================================
 function Resolve-ArrPaths ([hashtable]$Config, [string]$AppName) {
     if (-not $Config.Enabled) { return }
@@ -261,12 +252,8 @@ Write-Host ''
 
 # ================================================================
 #  STARTUP: CONFIG VALIDATOR
-#
-#  Tests API connectivity and path accessibility for all enabled
-#  apps. Always runs at startup. Results are cached for the
-#  dashboard and printed to the console.
 # ================================================================
-$Script:DashboardCache = $null   # populated by Invoke-ConfigValidator
+$Script:DashboardCache = $null
 
 function Invoke-ConfigValidator {
     $results = @{
@@ -276,9 +263,9 @@ function Invoke-ConfigValidator {
     }
 
     $appDefs = @(
-        @{ Name = 'Radarr'; Config = $RadarrConfig; Endpoint = 'movie';  CountField = 'title'; StatusKey = 'Radarr' }
-        @{ Name = 'Sonarr'; Config = $SonarrConfig; Endpoint = 'series'; CountField = 'title'; StatusKey = 'Sonarr' }
-        @{ Name = 'Lidarr'; Config = $LidarrConfig; Endpoint = 'artist'; CountField = 'artistName'; StatusKey = 'Lidarr' }
+        @{ Name = 'Radarr'; Config = $RadarrConfig; Endpoint = 'movie';  Label = 'movies';  CountField = 'title';      StatusKey = 'Radarr' }
+        @{ Name = 'Sonarr'; Config = $SonarrConfig; Endpoint = 'series'; Label = 'series';  CountField = 'title';      StatusKey = 'Sonarr' }
+        @{ Name = 'Lidarr'; Config = $LidarrConfig; Endpoint = 'artist'; Label = 'artists'; CountField = 'artistName'; StatusKey = 'Lidarr' }
     )
 
     Write-Host '  ============================================================' -ForegroundColor Cyan
@@ -304,7 +291,7 @@ function Invoke-ConfigValidator {
             $count   = if ($library) { $library.Count } else { 0 }
             $results[$key].ApiOk = $true
             $results[$key].Count = $count
-            Write-Host ("  {0,-8}  API  [OK]  {1} {2}" -f $app.Name, $count, $app.Endpoint) -ForegroundColor Green
+            Write-Host ("  {0,-8}  API  [OK]  {1,5} {2}" -f $app.Name, $count, $app.Label) -ForegroundColor Green
         } else {
             Write-Host ("  {0,-8}  API  [FAIL]  Cannot reach {1}" -f $app.Name, $cfg.BaseUrl) -ForegroundColor Red
             $allOk = $false
@@ -314,16 +301,16 @@ function Invoke-ConfigValidator {
         if ($cfg.Paths -and $cfg.Paths.Count -gt 0) {
             foreach ($path in $cfg.Paths) {
                 if (Test-Path -LiteralPath $path) {
-                    Write-Host ("  {0,-8}  Path [OK]  {1}" -f '', $path) -ForegroundColor Green
+                    Write-Host ("  {0,-8}  Path [OK]   {1}" -f $app.Name, $path) -ForegroundColor Green
                     $results[$key].PathResults += @{ Path = $path; Ok = $true }
                 } else {
-                    Write-Host ("  {0,-8}  Path [FAIL]  {1}" -f '', $path) -ForegroundColor Red
+                    Write-Host ("  {0,-8}  Path [FAIL] {1}" -f $app.Name, $path) -ForegroundColor Red
                     $results[$key].PathResults += @{ Path = $path; Ok = $false }
                     $allOk = $false
                 }
             }
         } else {
-            Write-Host ("  {0,-8}  Path [WARN]  No paths resolved -- API fetch may have failed" -f '') -ForegroundColor Yellow
+            Write-Host ("  {0,-8}  Path [WARN] No paths resolved -- API fetch may have failed" -f $app.Name) -ForegroundColor Yellow
             $allOk = $false
         }
 
@@ -346,8 +333,6 @@ Invoke-ConfigValidator
 #  TOOL 1: FOLDERBOY CLEANER
 # ================================================================
 function Invoke-CleanerScan {
-    # Scans a single preset's paths and returns result stats.
-    # Called by Invoke-FolderBoyCleaner for both single and All modes.
     param(
         [bool]$LiveDelete,
         [string]$Label,
@@ -471,7 +456,6 @@ function Invoke-FolderBoyCleaner {
         Write-Log '  Review the output, then re-run and choose Live Delete to apply.' 'Cyan'
     }
 
-    # Build menu: numbered presets + All Libraries + Custom
     $customKey = $FolderBoyPresets.Keys | Select-Object -Last 1
     $allKey    = 'A'
 
@@ -490,7 +474,6 @@ function Invoke-FolderBoyCleaner {
     $validKeys = @($FolderBoyPresets.Keys) + $allKey
     do { $choice = (Read-Host '  Choice').ToUpper() } until ($validKeys -contains $choice)
 
-    # --- ALL LIBRARIES ---
     if ($choice -eq $allKey) {
         if ($LiveDelete) {
             if (-not (Confirm-LiveAction 'This will permanently delete folders containing no media files across ALL libraries.')) { return }
@@ -536,7 +519,6 @@ function Invoke-FolderBoyCleaner {
         return @{ Label = 'All Libraries'; Paths = @('All') }
     }
 
-    # --- CUSTOM PRESET ---
     if ($choice -eq $customKey) {
         $customInput = Read-Host '  Enter extensions comma-separated (e.g. mp3,flac,wav)'
         $mediaExts = $customInput -split ',' | ForEach-Object {
@@ -546,7 +528,6 @@ function Invoke-FolderBoyCleaner {
         $label     = 'Custom'
         $scanPaths = @(Read-Host '  Enter root path to scan')
     } else {
-        # --- SINGLE PRESET ---
         $preset    = $FolderBoyPresets[$choice]
         $mediaExts = $preset.Exts
         $label     = $preset.Label
@@ -594,9 +575,6 @@ function Invoke-FolderBoyCleaner {
 #  TOOL 2: SONARR FOLDER RENAMER
 # ================================================================
 function Get-CleanTitle ([string]$Title) {
-    # Mirrors Sonarr's title sanitization:
-    # colons become space-dash, forward slash removed,
-    # other illegal Windows filename characters removed.
     $clean = $Title -replace ':', ' -'
     $clean = $clean -replace '[\\/<>"\|\?\*]', ''
     $clean = $clean -replace '\s+', ' '
@@ -604,14 +582,6 @@ function Get-CleanTitle ([string]$Title) {
 }
 
 function Test-TitleMatch ([string]$FolderName, [string]$SonarrTitle, [int]$Year = 0) {
-    # Returns $true if the folder name (minus tag blocks) normalizes to the same
-    # string as the Sonarr title under any of three comparisons:
-    #   1. Direct: folder == Sonarr title (handles most cases)
-    #   2. NoYear: folder == Sonarr title without disambiguation year
-    #              e.g. folder "The Twilight Zone" vs title "The Twilight Zone (1985)"
-    #   3. WithYear: folder == Sonarr clean title + (Year)
-    #              e.g. folder "The Wire (2002)" vs title "The Wire" with year=2002
-    # Prevents accidental renames of folders that differ from what Sonarr would generate.
     $folderBase         = ($FolderName -replace '\{[^}]+\}', '' -replace '\s+', ' ').Trim()
     $normFolder         = Normalize $folderBase
     $clean              = Get-CleanTitle $SonarrTitle
@@ -625,9 +595,6 @@ function Test-TitleMatch ([string]$FolderName, [string]$SonarrTitle, [int]$Year 
 }
 
 function Get-TargetFolderName ([string]$Title, [int]$Year, [string]$ImdbId) {
-    # Builds: {Series TitleYear} {imdb-{ImdbId}}
-    # e.g.   The Wire (2002) {imdb-tt0306414}
-    # Does not append year if the clean title already ends with (YYYY).
     $clean = Get-CleanTitle $Title
     if ($Year -gt 0 -and $clean -notmatch '\(\d{4}\)\s*$') {
         return "{0} ({1}) {{imdb-{2}}}" -f $clean, $Year, $ImdbId
@@ -809,18 +776,12 @@ function Invoke-SonarrRenamer {
 #  TOOL 3: RADARR FOLDER RENAMER
 # ================================================================
 function Get-RadarrCleanTitle ([string]$Title) {
-    # Mirrors Radarr's {Movie CleanTitle} token behavior:
-    # illegal Windows filename characters are removed entirely.
-    # Radarr folder names use CleanTitle which drops colons, slashes etc.
-    # e.g. "3:10 to Yuma" becomes "310 to Yuma", not "3 -10 to Yuma".
     $clean = $Title -replace '[:\/<>"\|\?\*]', ''
     $clean = $clean -replace '\s+', ' '
     return $clean.Trim()
 }
 
 function Get-RadarrTargetFolderName ([string]$Title, [int]$Year, [string]$ImdbId, [bool]$UsePlex) {
-    # Minimum: {Movie CleanTitle} ({Release Year})
-    # Plex:    {Movie CleanTitle} ({Release Year}) {imdb-{ImdbId}}
     $clean = Get-RadarrCleanTitle $Title
     if ($UsePlex -and $ImdbId) {
         return "{0} ({1}) {{imdb-{2}}}" -f $clean, $Year, $ImdbId
@@ -855,7 +816,6 @@ function Invoke-RadarrFolderRenamer {
     Write-Tip 'Guide: https://trash-guides.info/Radarr/Radarr-recommended-naming-scheme/'
     Write-Log ''
 
-    # Ask user which format to target
     Write-Log '  Select target folder format:' 'Cyan'
     Write-Log ''
     Write-Log '    (1) Minimum  -- {Movie CleanTitle} ({Release Year})'
@@ -929,15 +889,7 @@ function Invoke-RadarrFolderRenamer {
 
         if ($folderName -eq $newFolderName) { $counts.AlreadyCorrect++; continue }
 
-        # Soft match: if the only difference between the existing folder name
-        # and the target is the presence of ' - ' separators (e.g. folder has
-        # "13 Hours - The Secret Soldiers of Benghazi" but CleanTitle produces
-        # "13 Hours The Secret Soldiers of Benghazi"), skip the rename.
-        # This preserves existing well-formatted folders from earlier Radarr
-        # conventions without forcing a mass cosmetic rename.
-        # We still rename if the year differs, quality tags are present, or
-        # the title itself is substantively different.
-        $normFolder = ($folderName  -replace ' - ', ' ' -replace '\s+', ' ').Trim()
+        $normFolder = ($folderName    -replace ' - ', ' ' -replace '\s+', ' ').Trim()
         $normTarget = ($newFolderName -replace ' - ', ' ' -replace '\s+', ' ').Trim()
         if ($normFolder -eq $normTarget) { $counts.AlreadyCorrect++; continue }
 
@@ -1021,17 +973,10 @@ function Invoke-RadarrFolderRenamer {
 #  TOOL 4: LIDARR FOLDER RENAMER
 # ================================================================
 function Get-LidarrCleanArtistName ([string]$Name) {
-    # Mirrors Lidarr's artist folder sanitization:
-    # colons become space-dash, other illegal Windows filename
-    # characters are removed entirely.
     $clean = $Name -replace ':', ' -'
     $clean = $clean -replace '[\\/<>"\|\?\*]', ''
     $clean = $clean -replace '\s+', ' '
     $clean = $clean.Trim()
-    # Strip trailing periods -- Windows allows them in folder names but
-    # Explorer and many tools silently strip them, causing path resolution
-    # issues. Accept the existing folder name as correct if the only
-    # difference is a trailing period (e.g. "T.I." stays as "T.I").
     $clean = $clean.TrimEnd('.')
     return $clean
 }
@@ -1103,10 +1048,6 @@ function Invoke-LidarrFolderRenamer {
         $newFolderName = Get-LidarrCleanArtistName $artistName
         $newPath       = Join-Path $parentDir $newFolderName
 
-        # Treat as already correct if names match exactly, or if the only
-        # difference is a trailing period on the existing folder name.
-        # Windows allows trailing periods but they cause path resolution issues
-        # so we neither rename to add them nor rename to remove them.
         if ($folderName -eq $newFolderName) { $counts.AlreadyCorrect++; continue }
         if ($folderName.TrimEnd('.') -eq $newFolderName) { $counts.AlreadyCorrect++; continue }
 
@@ -1375,8 +1316,6 @@ function Invoke-LidarrScan {
     $artistLookup = @{}
     foreach ($a in $artists) { $artistLookup[(Normalize $a.artistName)] = $a.artistName }
 
-    # Pre-compute punctuation-stripped fuzzy lookup so we don't rebuild
-    # it on every unmatched folder during the scan loop.
     $fuzzyLookup = @{}
     foreach ($key in $artistLookup.Keys) {
         $stripped = $key -replace '[^a-z0-9]', ''
@@ -1577,7 +1516,7 @@ function Invoke-OrphanInteractiveDelete ($RadarrStats, $SonarrStats, $LidarrStat
 function Invoke-OrphanScanner {
     param(
         [bool]$WithDelete = $false,
-        [string]$Scope = 'All'   # All | Radarr | Sonarr | Lidarr
+        [string]$Scope = 'All'
     )
 
     Start-Log 'FolderBoy_Scanner'
@@ -1707,7 +1646,6 @@ function Show-MainMenu {
     Write-Host '  (7) Exit'
     Write-Host ''
 
-    # Dashboard
     if ($Script:DashboardCache) {
         Write-Host '  Library Health:' -ForegroundColor DarkGray
         $appDefs = @(
@@ -1738,7 +1676,6 @@ function Show-MainMenu {
         Write-Host ''
     }
 
-    # Session activity log
     if ($SessionLog.Count -gt 0) {
         Write-Host '  This session:' -ForegroundColor DarkGray
         foreach ($entry in $SessionLog) {
