@@ -876,7 +876,13 @@ function Get-LidarrCleanArtistName ([string]$Name) {
     $clean = $Name -replace ':', ' -'
     $clean = $clean -replace '[\\/<>"\|\?\*]', ''
     $clean = $clean -replace '\s+', ' '
-    return $clean.Trim()
+    $clean = $clean.Trim()
+    # Strip trailing periods -- Windows allows them in folder names but
+    # Explorer and many tools silently strip them, causing path resolution
+    # issues. Accept the existing folder name as correct if the only
+    # difference is a trailing period (e.g. "T.I." stays as "T.I").
+    $clean = $clean.TrimEnd('.')
+    return $clean
 }
 
 function Invoke-LidarrFolderRenamer {

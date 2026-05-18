@@ -8,6 +8,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Lidarr Folder Renamer** — trailing periods are now stripped from generated
+  artist folder names. Windows allows trailing periods in folder names but
+  Explorer and many tools silently remove them, causing path resolution issues.
+  Artists like `T.I.`, `Dinosaur Jr.`, and `Run‐D.M.C.` whose folders lack the
+  trailing period are now correctly treated as already correct rather than flagged
+  for rename.
+
 ### Planned
 - Scheduled / unattended execution support (Windows Task Scheduler)
 - Radarr orphan scanner improvements for libraries with parenthetical folder suffixes
