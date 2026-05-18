@@ -705,6 +705,8 @@ function Invoke-SonarrRenamer {
             $counts.PathMissing++
             continue
         }
+
+        if (-not (Test-TitleMatch $folderName $title)) {
             Write-Log ("  [MISMATCH]   {0}" -f $title) 'Yellow'
             Write-Log ("      Folder : {0}" -f $folderName) 'Yellow'
             Write-Log ("      Sonarr : {0}" -f (Get-CleanTitle $title)) 'Yellow'
