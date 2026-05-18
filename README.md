@@ -1,6 +1,6 @@
 # FolderBoy — Media Library Manager
 
-**Version: 0.4.4**
+**Version: 0.4.5**
 
 A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy helps you keep your library clean by renaming series, movie, and artist folders to standard formats, finding orphaned media, and removing folders that contain no recognized media files.
 
@@ -126,6 +126,18 @@ Each \*arr app has an `Enabled` flag. Set it to `$false` if you don't use that a
 ```powershell
 $LidarrConfig = @{
     Enabled = $false    # Lidarr not in use -- skip all Lidarr features
+    ...
+}
+```
+
+### Suppressing missing path entries
+
+If an app has many monitored items that haven't been downloaded yet, the Folder Renamer output can be noisy with `[MISSING]` entries. Set `SuppressMissing = $true` to hide them — the count still appears in the summary:
+
+```powershell
+$LidarrConfig = @{
+    Enabled         = $true
+    SuppressMissing = $true   # Hide [MISSING] lines in Lidarr Folder Renamer output
     ...
 }
 ```

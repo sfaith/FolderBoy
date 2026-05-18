@@ -15,6 +15,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.4.5] - 2026-05-17
+
+### Added
+- **Config validator** — runs automatically at startup after path resolution.
+  Tests API connectivity (via `/system/status`) and path accessibility for every
+  enabled app. Prints pass/fail for each check. All results are always shown,
+  including passes, so users can confirm their setup is fully operational.
+- **Library health dashboard** — the main menu now displays a color-coded summary
+  below the tool list showing API status and library counts for each enabled app.
+  Green = healthy, Yellow = orphans present (after an Orphan Scanner run),
+  Red = API unreachable or path inaccessible. Counts are fetched at startup and
+  cached; orphan counts are updated after each Orphan Scanner run.
+- **SuppressMissing config flag** — add `SuppressMissing = $true` to any `*arr`
+  config block to hide `[MISSING]` path entries in that app's Folder Renamer
+  output. The count is still shown in the summary. Useful for Lidarr libraries
+  with many monitored-but-not-yet-downloaded artists. Applies to Sonarr, Radarr,
+  and Lidarr renamers. Defaults to `$false` if not set.
+
+---
+
 ## [0.4.4] - 2026-05-17
 
 ### Added

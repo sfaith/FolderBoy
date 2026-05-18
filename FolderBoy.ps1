@@ -1,5 +1,5 @@
 # ================================================================
-#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.4
+#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.5
 #  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
@@ -112,6 +112,12 @@ if ($configErrors.Count) {
 $SonarrConfig.ApiVersion = 'v3'
 $RadarrConfig.ApiVersion = 'v3'
 $LidarrConfig.ApiVersion = 'v1'
+
+# Default SuppressMissing to $false if not set in config.
+# Set to $true in config to hide [MISSING] path entries in renamer output.
+if ($null -eq $SonarrConfig.SuppressMissing) { $SonarrConfig.SuppressMissing = $false }
+if ($null -eq $RadarrConfig.SuppressMissing) { $RadarrConfig.SuppressMissing = $false }
+if ($null -eq $LidarrConfig.SuppressMissing) { $LidarrConfig.SuppressMissing = $false }
 
 # ================================================================
 #  SHARED HELPERS
@@ -252,6 +258,89 @@ Resolve-ArrPaths $RadarrConfig 'Radarr'
 Resolve-ArrPaths $SonarrConfig 'Sonarr'
 Resolve-ArrPaths $LidarrConfig 'Lidarr'
 Write-Host ''
+
+# ================================================================
+#  STARTUP: CONFIG VALIDATOR
+#
+#  Tests API connectivity and path accessibility for all enabled
+#  apps. Always runs at startup. Results are cached for the
+#  dashboard and printed to the console.
+# ================================================================
+$Script:DashboardCache = $null   # populated by Invoke-ConfigValidator
+
+function Invoke-ConfigValidator {
+    $results = @{
+        Radarr = @{ Enabled = $RadarrConfig.Enabled; ApiOk = $false; Count = 0; Orphans = $null; PathResults = @() }
+        Sonarr = @{ Enabled = $SonarrConfig.Enabled; ApiOk = $false; Count = 0; Orphans = $null; PathResults = @() }
+        Lidarr = @{ Enabled = $LidarrConfig.Enabled; ApiOk = $false; Count = 0; Orphans = $null; PathResults = @() }
+    }
+
+    $appDefs = @(
+        @{ Name = 'Radarr'; Config = $RadarrConfig; Endpoint = 'movie';  CountField = 'title'; StatusKey = 'Radarr' }
+        @{ Name = 'Sonarr'; Config = $SonarrConfig; Endpoint = 'series'; CountField = 'title'; StatusKey = 'Sonarr' }
+        @{ Name = 'Lidarr'; Config = $LidarrConfig; Endpoint = 'artist'; CountField = 'artistName'; StatusKey = 'Lidarr' }
+    )
+
+    Write-Host '  ============================================================' -ForegroundColor Cyan
+    Write-Host '   FolderBoy  |  Configuration Check' -ForegroundColor Cyan
+    Write-Host '  ============================================================' -ForegroundColor Cyan
+    Write-Host ''
+
+    $allOk = $true
+
+    foreach ($app in $appDefs) {
+        $key = $app.StatusKey
+        $cfg = $app.Config
+
+        if (-not $cfg.Enabled) {
+            Write-Host ("  {0,-8}  Disabled" -f $app.Name) -ForegroundColor DarkGray
+            continue
+        }
+
+        # Test API
+        $status = Invoke-ArrGet $cfg 'system/status'
+        if ($status) {
+            $library = Invoke-ArrGet $cfg $app.Endpoint
+            $count   = if ($library) { $library.Count } else { 0 }
+            $results[$key].ApiOk = $true
+            $results[$key].Count = $count
+            Write-Host ("  {0,-8}  API  [OK]  {1} {2}" -f $app.Name, $count, $app.Endpoint) -ForegroundColor Green
+        } else {
+            Write-Host ("  {0,-8}  API  [FAIL]  Cannot reach {1}" -f $app.Name, $cfg.BaseUrl) -ForegroundColor Red
+            $allOk = $false
+        }
+
+        # Test paths
+        if ($cfg.Paths -and $cfg.Paths.Count -gt 0) {
+            foreach ($path in $cfg.Paths) {
+                if (Test-Path -LiteralPath $path) {
+                    Write-Host ("  {0,-8}  Path [OK]  {1}" -f '', $path) -ForegroundColor Green
+                    $results[$key].PathResults += @{ Path = $path; Ok = $true }
+                } else {
+                    Write-Host ("  {0,-8}  Path [FAIL]  {1}" -f '', $path) -ForegroundColor Red
+                    $results[$key].PathResults += @{ Path = $path; Ok = $false }
+                    $allOk = $false
+                }
+            }
+        } else {
+            Write-Host ("  {0,-8}  Path [WARN]  No paths resolved -- API fetch may have failed" -f '') -ForegroundColor Yellow
+            $allOk = $false
+        }
+
+        Write-Host ''
+    }
+
+    if ($allOk) {
+        Write-Host '  All checks passed.' -ForegroundColor Green
+    } else {
+        Write-Host '  One or more checks failed. Review the items above before running tools.' -ForegroundColor Yellow
+    }
+    Write-Host ''
+
+    $Script:DashboardCache = $results
+}
+
+Invoke-ConfigValidator
 
 # ================================================================
 #  TOOL 1: FOLDERBOY CLEANER
@@ -610,12 +699,12 @@ function Invoke-SonarrRenamer {
         }
 
         if (-not (Test-Path -LiteralPath $currentPath)) {
-            Write-Log ("  [MISSING]    {0} -- path not found: {1}" -f $title, $currentPath) 'Yellow'
+            if (-not $SonarrConfig.SuppressMissing) {
+                Write-Log ("  [MISSING]    {0} -- path not found: {1}" -f $title, $currentPath) 'Yellow'
+            }
             $counts.PathMissing++
             continue
         }
-
-        if (-not (Test-TitleMatch $folderName $title)) {
             Write-Log ("  [MISMATCH]   {0}" -f $title) 'Yellow'
             Write-Log ("      Folder : {0}" -f $folderName) 'Yellow'
             Write-Log ("      Sonarr : {0}" -f (Get-CleanTitle $title)) 'Yellow'
@@ -819,7 +908,9 @@ function Invoke-RadarrFolderRenamer {
         }
 
         if (-not (Test-Path -LiteralPath $currentPath)) {
-            Write-Log ("  [MISSING]    {0} -- path not found: {1}" -f $title, $currentPath) 'Yellow'
+            if (-not $RadarrConfig.SuppressMissing) {
+                Write-Log ("  [MISSING]    {0} -- path not found: {1}" -f $title, $currentPath) 'Yellow'
+            }
             $counts.PathMissing++
             continue
         }
@@ -993,7 +1084,9 @@ function Invoke-LidarrFolderRenamer {
         $parentDir  = Split-Path $currentPath -Parent
 
         if (-not (Test-Path -LiteralPath $currentPath)) {
-            Write-Log ("  [MISSING]    {0} -- path not found: {1}" -f $artistName, $currentPath) 'Yellow'
+            if (-not $LidarrConfig.SuppressMissing) {
+                Write-Log ("  [MISSING]    {0} -- path not found: {1}" -f $artistName, $currentPath) 'Yellow'
+            }
             $counts.PathMissing++
             continue
         }
@@ -1568,6 +1661,19 @@ function Invoke-OrphanScanner {
     Write-Log ''
     Write-Log ("  Log saved to: {0}" -f $Script:LogFile) 'Cyan'
 
+    # Update dashboard cache with orphan counts from this scan
+    if ($Script:DashboardCache) {
+        foreach ($pair in @(
+            @{ Name = 'Radarr'; Stats = $radarrStats; Scoped = ($Scope -in 'All','Radarr') },
+            @{ Name = 'Sonarr'; Stats = $sonarrStats; Scoped = ($Scope -in 'All','Sonarr') },
+            @{ Name = 'Lidarr'; Stats = $lidarrStats; Scoped = ($Scope -in 'All','Lidarr') }
+        )) {
+            if ($pair.Scoped -and $pair.Stats) {
+                $Script:DashboardCache[$pair.Name].Orphans = $pair.Stats.NotInArr.Count + $pair.Stats.NeedsReview.Count
+            }
+        }
+    }
+
     if ($WithDelete) {
         Invoke-OrphanInteractiveDelete $radarrStats $sonarrStats $lidarrStats
     }
@@ -1591,6 +1697,37 @@ function Show-MainMenu {
     Write-Host '  (6) Full Run             -- all Renamers then Scanner (recommended workflow)'
     Write-Host '  (7) Exit'
     Write-Host ''
+
+    # Dashboard
+    if ($Script:DashboardCache) {
+        Write-Host '  Library Health:' -ForegroundColor DarkGray
+        $appDefs = @(
+            @{ Name = 'Radarr'; Key = 'Radarr'; Label = 'movies'  }
+            @{ Name = 'Sonarr'; Key = 'Sonarr'; Label = 'series'  }
+            @{ Name = 'Lidarr'; Key = 'Lidarr'; Label = 'artists' }
+        )
+        foreach ($app in $appDefs) {
+            $d = $Script:DashboardCache[$app.Key]
+            if (-not $d.Enabled) {
+                Write-Host ("    {0,-8}  Disabled" -f $app.Name) -ForegroundColor DarkGray
+            } elseif (-not $d.ApiOk) {
+                Write-Host ("    {0,-8}  API unreachable" -f $app.Name) -ForegroundColor Red
+            } else {
+                $pathFail = ($d.PathResults | Where-Object { -not $_.Ok }).Count
+                $line = "    {0,-8}  {1,5} {2}" -f $app.Name, $d.Count, $app.Label
+                if ($d.Orphans -gt 0) {
+                    $line += "   {0} orphan{1}" -f $d.Orphans, $(if ($d.Orphans -ne 1) { 's' } else { '' })
+                    Write-Host $line -ForegroundColor Yellow
+                } elseif ($pathFail -gt 0) {
+                    $line += "   {0} path(s) unreachable" -f $pathFail
+                    Write-Host $line -ForegroundColor Red
+                } else {
+                    Write-Host $line -ForegroundColor Green
+                }
+            }
+        }
+        Write-Host ''
+    }
 
     # Session activity log
     if ($SessionLog.Count -gt 0) {

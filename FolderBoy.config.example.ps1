@@ -1,5 +1,5 @@
 # ================================================================
-#  FolderBoy.config.example.ps1  |  Configuration Template
+#  FolderBoy.config.example.ps1  |  Configuration Template  |  v0.4.3
 #
 #  Copy this file to FolderBoy.config.ps1 and fill in your
 #  own values before running FolderBoy for the first time.
@@ -11,53 +11,6 @@
 # ================================================================
 
 # ----------------------------------------------------------------
-#  FOLDERBOY CLEANER PRESETS
-#
-#  Each preset defines:
-#    Label  -- display name shown in the menu
-#    Exts   -- file extensions that count as media for this type
-#    Paths  -- root folders to scan (array, one path per line)
-#
-#  FolderBoy flags any subfolder that contains NO files matching
-#  the Exts list. The Custom preset always appears and lets you
-#  enter extensions interactively at runtime.
-#
-#  Add as many presets as you like by adding numbered entries.
-# ----------------------------------------------------------------
-$FolderBoyPresets = [ordered]@{
-    '1' = @{
-        Label = 'TV Shows'
-        Exts  = @('.mkv','.mp4','.avi','.m4v','.mov','.wmv','.ts','.m2ts','.iso')
-        Paths = @(
-            '\\YOUR-SERVER\Episodes'     # Replace with your TV root path
-            # '\\YOUR-SERVER\Anime'      # Uncomment and edit to add more paths
-        )
-    }
-    '2' = @{
-        Label = 'Movies'
-        Exts  = @('.mkv','.mp4','.avi','.m4v','.mov','.wmv','.ts','.m2ts','.iso',
-                  '.mpg','.mpeg')        # .mpg and .mpeg for older content
-        Paths = @(
-            '\\YOUR-SERVER\Movies'       # Replace with your movie root path
-            # '\\YOUR-SERVER\Documentaries'
-        )
-    }
-    '3' = @{
-        Label = 'Music'
-        Exts  = @('.mp3','.flac','.wav','.aac','.ogg','.wma',
-                  '.m4a','.alac','.aiff','.ape','.opus','.dsf','.dff')
-        Paths = @(
-            '\\YOUR-SERVER\Music'        # Replace with your music root path
-        )
-    }
-    '4' = @{
-        Label = 'Custom (enter extensions manually)'
-        Exts  = @()
-        Paths = @()
-    }
-}
-
-# ----------------------------------------------------------------
 #  RADARR
 #
 #  Enabled  : $true to use Radarr features, $false to skip.
@@ -65,7 +18,9 @@ $FolderBoyPresets = [ordered]@{
 #             Use http://localhost:7878 if running on the same machine.
 #             Use http://HOSTNAME:7878 or http://IP:7878 for remote.
 #  ApiKey   : Settings > General > Security > API Key in Radarr.
-#  Paths    : Must match Settings > Media Management > Root Folders.
+#  Paths    : Optional. If omitted or empty, FolderBoy fetches root
+#             folders from the Radarr API automatically. Define
+#             manually only if you want to override or limit scope.
 #
 #  TRASH GUIDES -- Radarr Movie Folder Format:
 #    Minimum:  {Movie CleanTitle} ({Release Year})
@@ -79,10 +34,12 @@ $RadarrConfig = @{
     Enabled = $true
     BaseUrl = 'http://localhost:7878'    # CHANGE ME
     ApiKey  = 'YOUR_RADARR_API_KEY'     # CHANGE ME
-    Paths   = @(
-        '\\YOUR-SERVER\Movies'           # CHANGE ME
-        # '\\YOUR-SERVER\Documentaries'  # Add more paths as needed
-    )
+    # Paths omitted -- FolderBoy will fetch from Radarr API automatically.
+    # To override, uncomment and edit:
+    # Paths = @(
+    #     '\\YOUR-SERVER\Movies'
+    #     '\\YOUR-SERVER\Documentaries'
+    # )
 }
 
 # ----------------------------------------------------------------
@@ -91,9 +48,10 @@ $RadarrConfig = @{
 #  Enabled  : $true to use Sonarr features, $false to skip.
 #  BaseUrl  : URL you use to access Sonarr in a browser.
 #  ApiKey   : Settings > General > Security > API Key in Sonarr.
-#  Paths    : Must match Settings > Media Management > Root Folders.
+#  Paths    : Optional. If omitted or empty, FolderBoy fetches root
+#             folders from the Sonarr API automatically.
 #
-#  TRASH GUIDES -- Sonarr Series Folder Format (REQUIRED for tagger):
+#  TRASH GUIDES -- Sonarr Series Folder Format (REQUIRED for renamer):
 #    {Series TitleYear} {imdb-{ImdbId}}
 #    Example: The Wire (2002) {imdb-tt0306414}
 #    Set in Sonarr: Settings > Media Management > (show advanced)
@@ -104,9 +62,11 @@ $SonarrConfig = @{
     Enabled = $true
     BaseUrl = 'http://localhost:8989'    # CHANGE ME
     ApiKey  = 'YOUR_SONARR_API_KEY'     # CHANGE ME
-    Paths   = @(
-        '\\YOUR-SERVER\Episodes'         # CHANGE ME
-    )
+    # Paths omitted -- FolderBoy will fetch from Sonarr API automatically.
+    # To override, uncomment and edit:
+    # Paths = @(
+    #     '\\YOUR-SERVER\Episodes'
+    # )
 }
 
 # ----------------------------------------------------------------
@@ -115,7 +75,8 @@ $SonarrConfig = @{
 #  Enabled  : $true to use Lidarr features, $false to skip.
 #  BaseUrl  : URL you use to access Lidarr in a browser.
 #  ApiKey   : Settings > General > Security > API Key in Lidarr.
-#  Paths    : Must match Settings > Media Management > Root Folders.
+#  Paths    : Optional. If omitted or empty, FolderBoy fetches root
+#             folders from the Lidarr API automatically.
 #
 #  TRASH GUIDES -- Lidarr naming:
 #    Artist Folder : {Artist Name}
@@ -125,12 +86,70 @@ $SonarrConfig = @{
 #    https://wiki.servarr.com/lidarr/naming-guide
 # ----------------------------------------------------------------
 $LidarrConfig = @{
-    Enabled = $true
-    BaseUrl = 'http://localhost:8686'    # CHANGE ME
-    ApiKey  = 'YOUR_LIDARR_API_KEY'     # CHANGE ME
-    Paths   = @(
-        '\\YOUR-SERVER\Music'            # CHANGE ME
-    )
+    Enabled         = $true
+    BaseUrl         = 'http://localhost:8686'    # CHANGE ME
+    ApiKey          = 'YOUR_LIDARR_API_KEY'     # CHANGE ME
+    SuppressMissing = $true   # Lidarr libraries often have many monitored-but-not-yet-
+                              # downloaded artists. Set to $true to hide [MISSING] lines
+                              # in the Lidarr Folder Renamer output. Count still shown
+                              # in summary. Set to $false (or omit) to show all entries.
+    # Paths omitted -- FolderBoy will fetch from Lidarr API automatically.
+    # To override, uncomment and edit:
+    # Paths = @(
+    #     '\\YOUR-SERVER\Music'
+    # )
+}
+
+# ----------------------------------------------------------------
+#  FOLDERBOY CLEANER PRESETS
+#
+#  Each preset defines:
+#    Label  -- display name shown in the menu
+#    Exts   -- file extensions that count as media for this type
+#    Paths  -- root folders to scan (array, one path per line)
+#
+#  The *arr configs above must be defined first so their Paths
+#  can be referenced here. If you set explicit Paths in each
+#  *arr config above, those are reused directly. If Paths is
+#  omitted from a *arr config (API auto-fetch), the reference
+#  will be null at config load time -- in that case, set Cleaner
+#  paths explicitly below using the commented examples.
+#
+#  FolderBoy flags any subfolder that contains NO files matching
+#  the Exts list. The Custom preset always appears and lets you
+#  enter extensions interactively at runtime.
+#
+#  Add as many presets as you like by adding numbered entries.
+# ----------------------------------------------------------------
+$FolderBoyPresets = [ordered]@{
+    '1' = @{
+        Label = 'TV Shows'
+        Exts  = @('.mkv','.mp4','.avi','.m4v','.mov','.wmv','.ts','.m2ts','.iso')
+        Paths = $SonarrConfig.Paths      # Reuses Sonarr paths if defined above
+        # If using API auto-fetch for Sonarr, set explicitly instead:
+        # Paths = @('\\YOUR-SERVER\Episodes')
+    }
+    '2' = @{
+        Label = 'Movies'
+        Exts  = @('.mkv','.mp4','.avi','.m4v','.mov','.wmv','.ts','.m2ts','.iso',
+                  '.mpg','.mpeg')        # .mpg and .mpeg for older content
+        Paths = $RadarrConfig.Paths      # Reuses Radarr paths if defined above
+        # If using API auto-fetch for Radarr, set explicitly instead:
+        # Paths = @('\\YOUR-SERVER\Movies', '\\YOUR-SERVER\Documentaries')
+    }
+    '3' = @{
+        Label = 'Music'
+        Exts  = @('.mp3','.flac','.wav','.aac','.ogg','.wma',
+                  '.m4a','.alac','.aiff','.ape','.opus','.dsf','.dff')
+        Paths = $LidarrConfig.Paths      # Reuses Lidarr paths if defined above
+        # If using API auto-fetch for Lidarr, set explicitly instead:
+        # Paths = @('\\YOUR-SERVER\Music')
+    }
+    '4' = @{
+        Label = 'Custom (enter extensions manually)'
+        Exts  = @()
+        Paths = @()
+    }
 }
 
 # ----------------------------------------------------------------
