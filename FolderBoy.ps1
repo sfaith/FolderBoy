@@ -1402,14 +1402,18 @@ function Invoke-OrphanInteractiveDelete ($RadarrStats, $SonarrStats, $LidarrStat
 }
 
 function Invoke-OrphanScanner {
-    param([bool]$WithDelete = $false)
+    param(
+        [bool]$WithDelete = $false,
+        [string]$Scope = 'All'   # All | Radarr | Sonarr | Lidarr
+    )
 
     Start-Log 'FolderBoy_Scanner'
 
     Write-Log ''
     Write-Log '  ============================================================' 'Cyan'
     $scanModeLabel = if ($WithDelete) { 'Scan + Delete' } else { 'Scan Only' }
-    Write-Log ("   Orphan Scanner -- {0}" -f $scanModeLabel) 'Cyan'
+    $scopeLabel    = if ($Scope -eq 'All') { 'All Libraries' } else { $Scope }
+    Write-Log ("   Orphan Scanner -- {0} -- {1}" -f $scanModeLabel, $scopeLabel) 'Cyan'
     Write-Log ('   {0}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) 'Cyan'
     Write-Log '  ============================================================' 'Cyan'
 
@@ -1423,14 +1427,36 @@ function Invoke-OrphanScanner {
     Write-Log ''
     Write-Log '  Scanning libraries...' 'White'
 
-    Write-SectionHeader 'RADARR'
-    $radarrStats = Invoke-RadarrScan
+    $radarrStats = $null
+    $sonarrStats = $null
+    $lidarrStats = $null
 
-    Write-SectionHeader 'SONARR'
-    $sonarrStats = Invoke-SonarrScan
+    if ($Scope -in 'All', 'Radarr') {
+        Write-SectionHeader 'RADARR'
+        if (-not $RadarrConfig.Enabled) {
+            Write-Log '  Radarr is disabled in config -- skipping.' 'DarkGray'
+        } else {
+            $radarrStats = Invoke-RadarrScan
+        }
+    }
 
-    Write-SectionHeader 'LIDARR'
-    $lidarrStats = Invoke-LidarrScan
+    if ($Scope -in 'All', 'Sonarr') {
+        Write-SectionHeader 'SONARR'
+        if (-not $SonarrConfig.Enabled) {
+            Write-Log '  Sonarr is disabled in config -- skipping.' 'DarkGray'
+        } else {
+            $sonarrStats = Invoke-SonarrScan
+        }
+    }
+
+    if ($Scope -in 'All', 'Lidarr') {
+        Write-SectionHeader 'LIDARR'
+        if (-not $LidarrConfig.Enabled) {
+            Write-Log '  Lidarr is disabled in config -- skipping.' 'DarkGray'
+        } else {
+            $lidarrStats = Invoke-LidarrScan
+        }
+    }
 
     Write-Log ''
     Write-Log '  ============================================================' 'Cyan'
@@ -1440,11 +1466,13 @@ function Invoke-OrphanScanner {
     $grandNotInArr = 0; $grandNeedsReview = 0; $grandMatched = 0
 
     foreach ($pair in @(
-        @{ Name = 'Radarr'; Stats = $radarrStats; Cfg = $RadarrConfig },
-        @{ Name = 'Sonarr'; Stats = $sonarrStats; Cfg = $SonarrConfig },
-        @{ Name = 'Lidarr'; Stats = $lidarrStats; Cfg = $LidarrConfig }
+        @{ Name = 'Radarr'; Stats = $radarrStats; Cfg = $RadarrConfig; Scoped = ($Scope -in 'All','Radarr') },
+        @{ Name = 'Sonarr'; Stats = $sonarrStats; Cfg = $SonarrConfig; Scoped = ($Scope -in 'All','Sonarr') },
+        @{ Name = 'Lidarr'; Stats = $lidarrStats; Cfg = $LidarrConfig; Scoped = ($Scope -in 'All','Lidarr') }
     )) {
-        if (-not $pair.Cfg.Enabled) {
+        if (-not $pair.Scoped) {
+            Write-Log ("  {0,-10}  Not scanned" -f $pair.Name) 'DarkGray'
+        } elseif (-not $pair.Cfg.Enabled) {
             Write-Log ("  {0,-10}  Disabled" -f $pair.Name) 'DarkGray'
         } elseif ($pair.Stats) {
             $grandNotInArr    += $pair.Stats.NotInArr.Count
@@ -1594,13 +1622,25 @@ do {
         }
 
         '5' {
+            $scope = Select-SubMode 'Orphan Scanner scope:' @(
+                'All libraries -- scan Radarr, Sonarr, and Lidarr'
+                'Radarr only'
+                'Sonarr only'
+                'Lidarr only'
+            )
+            $scopeStr = switch ($scope) {
+                1 { 'All' }
+                2 { 'Radarr' }
+                3 { 'Sonarr' }
+                4 { 'Lidarr' }
+            }
             $mode = Select-SubMode 'Orphan Scanner mode:' @(
                 'Scan Only     -- report orphaned folders (safe, no changes)'
                 'Scan + Delete -- report then interactively select folders to delete'
             )
             $modeStr = if ($mode -eq 2) { 'Scan + Delete' } else { 'Scan Only' }
-            Invoke-OrphanScanner -WithDelete ($mode -eq 2)
-            Add-SessionEntry ("Orphan Scanner [{0}] -- complete" -f $modeStr)
+            Invoke-OrphanScanner -WithDelete ($mode -eq 2) -Scope $scopeStr
+            Add-SessionEntry ("Orphan Scanner [{0}] [{1}] -- complete" -f $modeStr, $scopeStr)
         }
 
         '6' {
@@ -1650,8 +1690,8 @@ do {
                 'Scan + Delete -- report then interactively select folders to delete'
             )
             $scanModeStr = if ($scanMode -eq 2) { 'Scan + Delete' } else { 'Scan Only' }
-            Invoke-OrphanScanner -WithDelete ($scanMode -eq 2)
-            Add-SessionEntry ("Orphan Scanner [{0}] -- complete" -f $scanModeStr)
+            Invoke-OrphanScanner -WithDelete ($scanMode -eq 2) -Scope 'All'
+            Add-SessionEntry ("Orphan Scanner [{0}] [All] -- complete" -f $scanModeStr)
         }
 
         '7' {
