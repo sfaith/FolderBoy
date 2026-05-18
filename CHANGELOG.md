@@ -90,8 +90,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - (7) Exit
 - **Full Run** (option 6) now runs all three Folder Renamers before Orphan Scanner;
   each renamer prompts for its own Dry Run / Live Rename mode independently
-- **Script header comment** updated: tool count corrected to six, all six tools listed,
-  GitHub URL corrected from placeholder to `https://github.com/sfaith/FolderBoy`
+- **Script header comment** updated: tool count corrected to six, all six tools listed
 - **README intro** updated to reflect all three Folder Renamers
 - **README recommended workflow** updated with Lidarr steps and corrected option numbers
 - **Orphan Scanner tip** updated to reference Sonarr Folder Renamer by new name
@@ -124,8 +123,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - (4) Orphan Scanner
   - (5) Full Run
   - (6) Exit
-- All British English spellings replaced with American English throughout
-  script and README (recognized, organized, maximizes, categorized, etc.)
 - README recommended workflow updated to include Radarr Folder Renamer steps
 - README log file table updated with Radarr Folder Renamer entry
 
