@@ -99,8 +99,6 @@ FolderBoy.config.example.ps1  →  FolderBoy.config.ps1  (your copy, fill this i
 
 Open `FolderBoy.config.ps1` in any text editor and fill in your settings. See [Configuration](#configuration) below for a full explanation of every setting.
 
-> **`FolderBoy.config.ps1` is excluded from source control via `.gitignore`.** Your API keys and paths will never be accidentally committed to GitHub. The example file (with placeholders) is what gets committed instead.
-
 ### 3. Run FolderBoy
 
 Double-click `FolderBoy.bat`, or run in PowerShell:
