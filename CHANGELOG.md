@@ -11,6 +11,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Planned
 - Scheduled / unattended execution support (Windows Task Scheduler)
 - Radarr orphan scanner improvements for libraries with parenthetical folder suffixes
+- Media file renaming (FLAC/MP3 cleanup within album folders)
+
+---
+
+## [0.4.0] - 2026-05-17
+
+### Added
+- **Lidarr Folder Renamer** (menu option 4) — renames artist folders to the
+  `{Artist Name}` format recommended by Lidarr and updates artist paths via API.
+  - Uses Lidarr API v1
+  - Same colon and illegal character sanitization as Sonarr Folder Renamer
+  - Automatic rollback if Lidarr API update fails after disk rename
+  - Dry Run and Live Rename modes
+  - Timestamped log: `FolderBoy_LidarrRenamer_YYYYMMDD_HHMMSS.log`
+- **Lidarr Folder Renamer** added to Full Run sequence (runs after Radarr, before Orphan Scanner)
+- **Lidarr Folder Renamer** added to README tools section, recommended workflow, and log file table
+
+### Changed
+- **Sonarr Folder Tagger renamed to Sonarr Folder Renamer** throughout — script,
+  README, CHANGELOG, log prefix (`FolderBoy_SonarrRenamer_*`), and all menu text.
+  The tool is functionally identical; the name better reflects what it does and
+  matches the naming convention of Radarr Folder Renamer and Lidarr Folder Renamer.
+- **Main menu renumbered** to accommodate new tool:
+  - (1) FolderBoy Cleaner
+  - (2) Sonarr Folder Renamer *(renamed from Sonarr Folder Tagger)*
+  - (3) Radarr Folder Renamer
+  - (4) Lidarr Folder Renamer *(new)*
+  - (5) Orphan Scanner
+  - (6) Full Run
+  - (7) Exit
+- **Full Run** (option 6) now runs all three Folder Renamers before Orphan Scanner;
+  each renamer prompts for its own Dry Run / Live Rename mode independently
+- **Script header comment** updated: tool count corrected to six, all six tools listed,
+  GitHub URL corrected from placeholder to `https://github.com/sfaith/FolderBoy`
+- **README intro** updated to reflect all three Folder Renamers
+- **README recommended workflow** updated with Lidarr steps and corrected option numbers
+- **Orphan Scanner tip** updated to reference Sonarr Folder Renamer by new name
 
 ---
 

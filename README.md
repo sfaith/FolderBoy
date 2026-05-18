@@ -1,6 +1,6 @@
 # FolderBoy — Media Library Manager
 
-A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy helps you keep your library clean by finding orphaned media, tagging Sonarr series folders with IMDb IDs, renaming Radarr movie folders to standard format, and removing folders that contain no recognized media files.
+A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy helps you keep your library clean by renaming series, movie, and artist folders to standard formats, finding orphaned media, and removing folders that contain no recognized media files.
 
 ---
 
@@ -14,7 +14,7 @@ Scans your media root folders and identifies subfolders that contain no media fi
 - Reports non-media file types found in flagged folders so you know what you're deleting
 - Dry Run mode shows exactly what would be deleted before you commit
 
-### 2. Sonarr Folder Tagger
+### 2. Sonarr Folder Renamer
 Finds Sonarr series folders missing an `{imdb-ttXXXXXXX}` ID tag, renames them on disk to match Sonarr's configured Series Folder Format, and updates the series path in Sonarr via API so everything stays in sync.
 
 Running this before the Orphan Scanner gives the scanner its most reliable results — ID-tagged folders are matched with high confidence.
@@ -33,7 +33,14 @@ Finds Radarr movie folders that don't match the recommended naming format and re
 - Automatically rolls back disk renames if the Radarr API update fails
 - Dry Run mode previews all renames before applying
 
-### 4. Orphan Scanner
+### 4. Lidarr Folder Renamer
+Finds Lidarr artist folders that don't match the recommended `{Artist Name}` format and renames them on disk, then updates the artist path in Lidarr via API so everything stays in sync.
+
+- Handles colon and illegal character sanitization consistently with Sonarr and Radarr
+- Automatically rolls back disk renames if the Lidarr API update fails
+- Dry Run mode previews all renames before applying
+
+### 5. Orphan Scanner
 Compares what is on disk against what each \*arr app manages. Produces a categorized report of unrecognized folders, then optionally lets you review and delete them one at a time.
 
 **Matching strategy:**
@@ -54,8 +61,8 @@ Compares what is on disk against what each \*arr app manages. Produces a categor
 
 The interactive delete flow lets you review each item individually (`D` delete / `S` skip / `Q` quit), queue deletions, see a size summary, and type `YES` to confirm before anything is removed.
 
-### 5. Full Run
-Runs the Sonarr Folder Tagger first, then the Orphan Scanner. This is the recommended workflow — tagging first maximizes ID coverage and gives the scanner its highest confidence results.
+### 6. Full Run
+Runs all three Folder Renamers (Sonarr, Radarr, Lidarr) then the Orphan Scanner. This is the recommended workflow — renaming first maximizes ID tag coverage and gives the scanner its highest confidence results. Disabled apps are skipped automatically.
 
 ---
 
@@ -184,9 +191,9 @@ Go to **Settings → Media Management → Show Advanced → Series Folder Format
 ```
 Example: `The Wire (2002) {imdb-tt0306414}`
 
-This is the format the Sonarr Folder Tagger enforces. Without the `{imdb-{ImdbId}}` token, newly added series will not have ID tags and the Orphan Scanner will fall back to name-based matching for those folders.
+This is the format the Sonarr Folder Renamer enforces. Without the `{imdb-{ImdbId}}` token, newly added series will not have ID tags and the Orphan Scanner will fall back to name-based matching for those folders.
 
-> **Note from TRaSH Guides:** Folder names are written to the database when a series is first added. If the IMDb ID is missing in Sonarr at that time, the folder will have a blank ID. Run the Sonarr Folder Tagger after adding the ID in Sonarr to fix existing folders.
+> **Note from TRaSH Guides:** Folder names are written to the database when a series is first added. If the IMDb ID is missing in Sonarr at that time, the folder will have a blank ID. Run the Sonarr Folder Renamer after adding the ID in Sonarr to fix existing folders.
 
 **Full guide:** https://trash-guides.info/Sonarr/Sonarr-recommended-naming-scheme/
 
@@ -247,19 +254,23 @@ Go to **Settings → Media Management → Show Advanced**
 
 For first-time use on an existing library:
 
-1. **Sonarr Folder Tagger → Dry Run** — review which series folders would be renamed. Investigate any `[MISMATCH]` entries and rename those folders manually first.
+1. **Sonarr Folder Renamer → Dry Run** — review which series folders would be renamed. Investigate any `[MISMATCH]` entries and rename those folders manually first.
 
-2. **Sonarr Folder Tagger → Live Rename** — apply the renames. Sonarr paths are updated automatically via API.
+2. **Sonarr Folder Renamer → Live Rename** — apply the renames. Sonarr paths are updated automatically via API.
 
 3. **Radarr Folder Renamer → Dry Run** — review which movie folders would be renamed. Choose Minimum or Plex format.
 
 4. **Radarr Folder Renamer → Live Rename** — apply the renames. Radarr paths are updated automatically via API.
 
-5. **Orphan Scanner → Scan Only** — review the full report. Investigate `NEEDS REVIEW` items before deciding whether to delete them.
+5. **Lidarr Folder Renamer → Dry Run** — review which artist folders would be renamed.
 
-6. **Orphan Scanner → Scan + Delete** — go through each flagged item, skip what you want to keep, queue what you want to delete, confirm with `YES`.
+6. **Lidarr Folder Renamer → Live Rename** — apply the renames. Lidarr paths are updated automatically via API.
 
-7. **Use option 5 (Full Run)** for ongoing maintenance — runs the Sonarr tagger and scanner back-to-back in a single session.
+7. **Orphan Scanner → Scan Only** — review the full report. Investigate `NEEDS REVIEW` items before deciding whether to delete them.
+
+8. **Orphan Scanner → Scan + Delete** — go through each flagged item, skip what you want to keep, queue what you want to delete, confirm with `YES`.
+
+9. **Use option 6 (Full Run)** for ongoing maintenance — runs all three Folder Renamers then the Orphan Scanner in a single session.
 
 ---
 
@@ -284,8 +295,9 @@ Every run saves a timestamped log file to the same folder as `FolderBoy.ps1`:
 | Tool | Log filename |
 |---|---|
 | FolderBoy Cleaner | `FolderBoy_YYYYMMDD_HHMMSS.log` |
-| Sonarr Folder Tagger | `FolderBoy_Tagger_YYYYMMDD_HHMMSS.log` |
+| Sonarr Folder Renamer | `FolderBoy_SonarrRenamer_YYYYMMDD_HHMMSS.log` |
 | Radarr Folder Renamer | `FolderBoy_RadarrRenamer_YYYYMMDD_HHMMSS.log` |
+| Lidarr Folder Renamer | `FolderBoy_LidarrRenamer_YYYYMMDD_HHMMSS.log` |
 | Orphan Scanner | `FolderBoy_Scanner_YYYYMMDD_HHMMSS.log` |
 
 Logs contain the full console output including all renamed, deleted, skipped, and failed items.
@@ -310,8 +322,8 @@ FolderBoy will print clear setup instructions. Copy `FolderBoy.config.example.ps
 **Sonarr API returns 400 Bad Request**
 FolderBoy sends the request body as UTF-8 bytes to handle series with non-ASCII characters in alternate titles. If you still see this error, please open an issue and include the relevant section of the log file.
 
-**Title mismatch warnings in the Sonarr Tagger**
-The folder name and Sonarr's stored title differ enough that FolderBoy won't rename automatically. Rename the folder manually to match the Sonarr title, then re-run the tagger.
+**Title mismatch warnings in the Sonarr Folder Renamer**
+The folder name and Sonarr's stored title differ enough that FolderBoy won't rename automatically. Rename the folder manually to match the Sonarr title, then re-run the Sonarr Folder Renamer.
 
 ---
 
