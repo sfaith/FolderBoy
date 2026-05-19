@@ -1,9 +1,9 @@
 # ================================================================
-#  FolderBoy.ps1  |  Media Library Manager  |  v0.4.6
+#  FolderBoy.ps1  |  Media Library Manager  |  v0.5.1
 #  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
-#  media libraries. Includes six tools:
+#  media libraries. Includes seven tools:
 #
 #    1. FolderBoy Cleaner      -- removes folders that contain no
 #                                 recognized media files (filesystem
@@ -31,6 +31,12 @@
 #    6. Full Run               -- runs all three Folder Renamers then
 #                                 Orphan Scanner in sequence
 #                                 (recommended workflow).
+#
+#    7. Media Dashboard        -- library statistics including counts,
+#                                 quality profiles, file formats, disk
+#                                 usage, and largest items. Quick mode
+#                                 uses API data only; Full mode adds
+#                                 a filesystem scan.
 #
 #  REQUIREMENTS:
 #    - PowerShell 5.1 or later (built into Windows 10/11/Server)
@@ -159,6 +165,7 @@ function Get-FolderSizeBytes ([string]$Path) {
 }
 
 function Format-Bytes ([long]$Bytes) {
+    if ($Bytes -ge 1TB) { return ('{0:N2} TB' -f ($Bytes / 1TB)) }
     if ($Bytes -ge 1GB) { return ('{0:N2} GB' -f ($Bytes / 1GB)) }
     if ($Bytes -ge 1MB) { return ('{0:N1} MB' -f ($Bytes / 1MB)) }
     return ('{0} B' -f $Bytes)
@@ -178,7 +185,6 @@ function Normalize-Path ([string]$p) {
 }
 
 function Invoke-ArrGet ([hashtable]$Config, [string]$Endpoint) {
-    # Generic GET for any *arr API. Config must have BaseUrl, ApiKey, and ApiVersion.
     $uri = "$($Config.BaseUrl.TrimEnd('/'))/api/$($Config.ApiVersion)/$Endpoint"
     try {
         return Invoke-RestMethod -Uri $uri `
@@ -192,9 +198,6 @@ function Invoke-ArrGet ([hashtable]$Config, [string]$Endpoint) {
 }
 
 function Invoke-ArrPut ([hashtable]$Config, [string]$Endpoint, [object]$Body) {
-    # Generic PUT for any *arr API. Sends body as UTF-8 bytes to handle
-    # non-ASCII characters in titles (e.g. accented letters in Sonarr
-    # alternate titles that cause 400 Bad Request when sent as plain strings).
     $uri = "$($Config.BaseUrl.TrimEnd('/'))/api/$($Config.ApiVersion)/$Endpoint"
     try {
         $json  = $Body | ConvertTo-Json -Depth 20 -Compress
@@ -284,7 +287,6 @@ function Invoke-ConfigValidator {
             continue
         }
 
-        # Test API
         $status = Invoke-ArrGet $cfg 'system/status'
         if ($status) {
             $library = Invoke-ArrGet $cfg $app.Endpoint
@@ -297,7 +299,6 @@ function Invoke-ConfigValidator {
             $allOk = $false
         }
 
-        # Test paths
         if ($cfg.Paths -and $cfg.Paths.Count -gt 0) {
             foreach ($path in $cfg.Paths) {
                 if (Test-Path -LiteralPath $path) {
@@ -770,7 +771,6 @@ function Invoke-SonarrRenamer {
     }
     Write-Log ("  Log saved to: {0}" -f $Script:LogFile) 'Cyan'
 }
-
 
 # ================================================================
 #  TOOL 3: RADARR FOLDER RENAMER
@@ -1628,6 +1628,369 @@ function Invoke-OrphanScanner {
 }
 
 # ================================================================
+#  TOOL 7: MEDIA DASHBOARD
+# ================================================================
+function Get-RadarrDashboard ([string[]]$Paths, [bool]$FullScan) {
+    Write-Log ''
+    Write-SectionHeader 'RADARR'
+    Write-Log ("  Radarr: {0}" -f $RadarrConfig.BaseUrl) 'White'
+    Write-Log ''
+
+    $movies          = Invoke-ArrGet $RadarrConfig 'movie'
+    $qualityProfiles = Invoke-ArrGet $RadarrConfig 'qualityprofile'
+
+    if (-not $movies) {
+        Write-Log '  Could not reach Radarr API.' 'Red'
+        return
+    }
+
+    $profileLookup = @{}
+    if ($qualityProfiles) {
+        foreach ($p in $qualityProfiles) { $profileLookup[$p.id] = $p.name }
+    }
+
+    $total       = $movies.Count
+    $hasFile     = ($movies | Where-Object { $_.hasFile }).Count
+    $missing     = $total - $hasFile
+    $monitored   = ($movies | Where-Object { $_.monitored }).Count
+    $unmonitored = $total - $monitored
+
+    $totalBytes = [long]0
+    foreach ($m in $movies) {
+        if ($m.hasFile -and $m.movieFile -and $m.movieFile.size) {
+            $totalBytes += [long]$m.movieFile.size
+        }
+    }
+
+    $profileCounts = @{}
+    foreach ($m in $movies) {
+        $pName = if ($profileLookup.ContainsKey($m.qualityProfileId)) {
+            $profileLookup[$m.qualityProfileId]
+        } else { 'Unknown' }
+        if (-not $profileCounts[$pName]) { $profileCounts[$pName] = 0 }
+        $profileCounts[$pName]++
+    }
+
+    $qualityCounts = @{}
+    foreach ($m in $movies | Where-Object { $_.hasFile -and $_.movieFile }) {
+        $qName = try { $m.movieFile.quality.quality.name } catch { 'Unknown' }
+        if (-not $qName) { $qName = 'Unknown' }
+        if (-not $qualityCounts[$qName]) { $qualityCounts[$qName] = 0 }
+        $qualityCounts[$qName]++
+    }
+
+    Write-Log ("  Total movies      : {0,6:N0}" -f $total) 'White'
+    Write-Log ("  On disk           : {0,6:N0}  |  Missing: {1:N0}" -f $hasFile, $missing) $(if ($missing) { 'Yellow' } else { 'White' })
+    Write-Log ("  Monitored         : {0,6:N0}  |  Unmonitored: {1:N0}" -f $monitored, $unmonitored) 'White'
+    Write-Log ("  Size on disk      : {0}  (as reported by Radarr)" -f (Format-Bytes $totalBytes)) 'White'
+    Write-Log ''
+    Write-Log '  Quality Profiles:' 'DarkGray'
+    foreach ($p in $profileCounts.GetEnumerator() | Sort-Object { $_.Value } -Descending) {
+        Write-Log ("    {0,-30} : {1,6:N0} movies" -f $p.Key, $p.Value) 'DarkGray'
+    }
+    Write-Log ''
+    Write-Log '  File Quality (actual files on disk):' 'DarkGray'
+    foreach ($q in $qualityCounts.GetEnumerator() | Sort-Object { $_.Value } -Descending) {
+        Write-Log ("    {0,-30} : {1,6:N0} files" -f $q.Key, $q.Value) 'DarkGray'
+    }
+
+    if ($FullScan) {
+        Write-Log ''
+        Write-Log '  Filesystem Scan:' 'Cyan'
+        $scanPaths    = if ($Paths) { $Paths } else { $RadarrConfig.Paths }
+        $totalFsBytes = [long]0
+        $formatCounts = @{}
+        $folderSizes  = [System.Collections.Generic.List[hashtable]]::new()
+        $totalFolders = 0
+
+        foreach ($root in $scanPaths) {
+            if (-not (Test-Path -LiteralPath $root)) {
+                Write-Log ("    [WARN] Path not found: {0}" -f $root) 'Yellow'
+                continue
+            }
+            $folders = Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue
+            $totalFolders += $folders.Count
+            Write-Log ("    Scanning {0} ({1} folders)..." -f $root, $folders.Count) 'DarkGray'
+
+            foreach ($folder in $folders) {
+                $files       = Get-ChildItem -LiteralPath $folder.FullName -Recurse -File -ErrorAction SilentlyContinue
+                $folderBytes = [long]($files | Measure-Object -Property Length -Sum).Sum
+                $totalFsBytes += $folderBytes
+                $folderSizes.Add(@{ Name = $folder.Name; Bytes = $folderBytes })
+                foreach ($file in $files) {
+                    $ext = if ($file.Extension) { $file.Extension.ToLower() } else { '(no ext)' }
+                    if (-not $formatCounts[$ext]) { $formatCounts[$ext] = @{ Count = 0; Bytes = [long]0 } }
+                    $formatCounts[$ext].Count++
+                    $formatCounts[$ext].Bytes += $file.Length
+                }
+            }
+        }
+
+        Write-Log ("    Actual disk usage : {0}  ({1:N0} folders)" -f (Format-Bytes $totalFsBytes), $totalFolders) 'White'
+        Write-Log ''
+        Write-Log '    File formats:' 'DarkGray'
+        foreach ($f in $formatCounts.GetEnumerator() | Sort-Object { $_.Value.Bytes } -Descending | Select-Object -First 8) {
+            $pct = if ($totalFsBytes -gt 0) { [math]::Round($f.Value.Bytes / $totalFsBytes * 100, 1) } else { 0 }
+            Write-Log ("      {0,-10} {1,6:N0} files   {2,10}   ({3,5}%)" -f $f.Key, $f.Value.Count, (Format-Bytes $f.Value.Bytes), $pct) 'DarkGray'
+        }
+        Write-Log ''
+        Write-Log '    Largest items:' 'DarkGray'
+        foreach ($item in $folderSizes | Sort-Object { $_.Bytes } -Descending | Select-Object -First 10) {
+            Write-Log ("      {0,-60} {1}" -f $item.Name, (Format-Bytes $item.Bytes)) 'DarkGray'
+        }
+    }
+}
+
+function Get-SonarrDashboard ([string[]]$Paths, [bool]$FullScan) {
+    Write-Log ''
+    Write-SectionHeader 'SONARR'
+    Write-Log ("  Sonarr: {0}" -f $SonarrConfig.BaseUrl) 'White'
+    Write-Log ''
+
+    $series = Invoke-ArrGet $SonarrConfig 'series'
+
+    if (-not $series) {
+        Write-Log '  Could not reach Sonarr API.' 'Red'
+        return
+    }
+
+    $total       = $series.Count
+    $monitored   = ($series | Where-Object { $_.monitored }).Count
+    $unmonitored = $total - $monitored
+
+    # Episode stats and size from series.statistics (no extra API call needed)
+    $totalEps   = [long]0
+    $epsOnDisk  = [long]0
+    $totalBytes = [long]0
+    foreach ($s in $series) {
+        if ($s.statistics) {
+            $totalEps   += $s.statistics.totalEpisodeCount
+            $epsOnDisk  += $s.statistics.episodeFileCount
+            if ($s.statistics.sizeOnDisk) { $totalBytes += [long]$s.statistics.sizeOnDisk }
+        }
+    }
+    $epsMissing = $totalEps - $epsOnDisk
+
+    # Quality breakdown -- fetch episode files for series that have files,
+    # batching by seriesId query parameter to avoid 400 on bulk endpoint.
+    # Cap at top 20 series by episode count to keep it fast in Quick mode.
+    Write-Log '  Fetching quality breakdown (sampling top series)...' 'DarkGray'
+    $qualityCounts = @{}
+    $seriesWithFiles = @($series | Where-Object { $_.statistics.episodeFileCount -gt 0 } |
+                         Sort-Object { $_.statistics.episodeFileCount } -Descending |
+                         Select-Object -First 20)
+
+    foreach ($s in $seriesWithFiles) {
+        $files = Invoke-ArrGet $SonarrConfig "episodefile?seriesId=$($s.id)"
+        if ($files) {
+            foreach ($ef in $files) {
+                $qName = try { $ef.quality.quality.name } catch { 'Unknown' }
+                if (-not $qName) { $qName = 'Unknown' }
+                if (-not $qualityCounts[$qName]) { $qualityCounts[$qName] = 0 }
+                $qualityCounts[$qName]++
+            }
+        }
+    }
+
+    Write-Log ("  Total series      : {0,6:N0}" -f $total) 'White'
+    Write-Log ("  Monitored         : {0,6:N0}  |  Unmonitored: {1:N0}" -f $monitored, $unmonitored) 'White'
+    Write-Log ("  Episodes on disk  : {0,6:N0}  |  Missing: {1:N0}" -f $epsOnDisk, $epsMissing) $(if ($epsMissing) { 'Yellow' } else { 'White' })
+    Write-Log ("  Size on disk      : {0}  (from series statistics)" -f (Format-Bytes $totalBytes)) 'White'
+
+    if ($qualityCounts.Count) {
+        Write-Log ''
+        Write-Log '  File Quality (sampled from top 20 series by episode count):' 'DarkGray'
+        foreach ($q in $qualityCounts.GetEnumerator() | Sort-Object { $_.Value } -Descending) {
+            Write-Log ("    {0,-30} : {1,6:N0} files" -f $q.Key, $q.Value) 'DarkGray'
+        }
+    }
+
+    if ($FullScan) {
+        Write-Log ''
+        Write-Log '  Filesystem Scan:' 'Cyan'
+        $scanPaths    = if ($Paths) { $Paths } else { $SonarrConfig.Paths }
+        $totalFsBytes = [long]0
+        $formatCounts = @{}
+        $folderSizes  = [System.Collections.Generic.List[hashtable]]::new()
+        $totalFolders = 0
+
+        foreach ($root in $scanPaths) {
+            if (-not (Test-Path -LiteralPath $root)) {
+                Write-Log ("    [WARN] Path not found: {0}" -f $root) 'Yellow'
+                continue
+            }
+            $folders = Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue
+            $totalFolders += $folders.Count
+            Write-Log ("    Scanning {0} ({1} series folders)..." -f $root, $folders.Count) 'DarkGray'
+
+            foreach ($folder in $folders) {
+                $files       = Get-ChildItem -LiteralPath $folder.FullName -Recurse -File -ErrorAction SilentlyContinue
+                $folderBytes = [long]($files | Measure-Object -Property Length -Sum).Sum
+                $totalFsBytes += $folderBytes
+                $folderSizes.Add(@{ Name = $folder.Name; Bytes = $folderBytes })
+                foreach ($file in $files) {
+                    $ext = if ($file.Extension) { $file.Extension.ToLower() } else { '(no ext)' }
+                    if (-not $formatCounts[$ext]) { $formatCounts[$ext] = @{ Count = 0; Bytes = [long]0 } }
+                    $formatCounts[$ext].Count++
+                    $formatCounts[$ext].Bytes += $file.Length
+                }
+            }
+        }
+
+        Write-Log ("    Actual disk usage : {0}  ({1:N0} folders)" -f (Format-Bytes $totalFsBytes), $totalFolders) 'White'
+        Write-Log ''
+        Write-Log '    File formats:' 'DarkGray'
+        foreach ($f in $formatCounts.GetEnumerator() | Sort-Object { $_.Value.Bytes } -Descending | Select-Object -First 8) {
+            $pct = if ($totalFsBytes -gt 0) { [math]::Round($f.Value.Bytes / $totalFsBytes * 100, 1) } else { 0 }
+            Write-Log ("      {0,-10} {1,6:N0} files   {2,10}   ({3,5}%)" -f $f.Key, $f.Value.Count, (Format-Bytes $f.Value.Bytes), $pct) 'DarkGray'
+        }
+        Write-Log ''
+        Write-Log '    Largest series:' 'DarkGray'
+        foreach ($item in $folderSizes | Sort-Object { $_.Bytes } -Descending | Select-Object -First 10) {
+            Write-Log ("      {0,-60} {1}" -f $item.Name, (Format-Bytes $item.Bytes)) 'DarkGray'
+        }
+    }
+}
+
+function Get-LidarrDashboard ([string[]]$Paths, [bool]$FullScan) {
+    Write-Log ''
+    Write-SectionHeader 'LIDARR'
+    Write-Log ("  Lidarr: {0}" -f $LidarrConfig.BaseUrl) 'White'
+    Write-Log ''
+
+    $artists = Invoke-ArrGet $LidarrConfig 'artist'
+    $albums  = Invoke-ArrGet $LidarrConfig 'album'
+
+    if (-not $artists) {
+        Write-Log '  Could not reach Lidarr API.' 'Red'
+        return
+    }
+
+    $total        = $artists.Count
+    $monitored    = ($artists | Where-Object { $_.monitored }).Count
+    $unmonitored  = $total - $monitored
+    $totalAlbums  = if ($albums) { $albums.Count } else { 0 }
+    $albumsOnDisk = if ($albums) { ($albums | Where-Object { $_.statistics.trackFileCount -gt 0 }).Count } else { 0 }
+
+    Write-Log ("  Total artists     : {0,6:N0}" -f $total) 'White'
+    Write-Log ("  Monitored         : {0,6:N0}  |  Unmonitored: {1:N0}" -f $monitored, $unmonitored) 'White'
+    Write-Log ("  Total albums      : {0,6:N0}  |  With files: {1:N0}" -f $totalAlbums, $albumsOnDisk) 'White'
+    Write-Log ("  Size on disk      : N/A in Quick mode -- run Full mode for filesystem size") 'DarkGray'
+
+    if ($FullScan) {
+        Write-Log ''
+        Write-Log '  Filesystem Scan:' 'Cyan'
+        $scanPaths    = if ($Paths) { $Paths } else { $LidarrConfig.Paths }
+        $totalFsBytes = [long]0
+        $formatCounts = @{}
+        $folderSizes  = [System.Collections.Generic.List[hashtable]]::new()
+        $totalFolders = 0
+
+        foreach ($root in $scanPaths) {
+            if (-not (Test-Path -LiteralPath $root)) {
+                Write-Log ("    [WARN] Path not found: {0}" -f $root) 'Yellow'
+                continue
+            }
+            $folders = Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue
+            $totalFolders += $folders.Count
+            Write-Log ("    Scanning {0} ({1} artist folders)..." -f $root, $folders.Count) 'DarkGray'
+
+            foreach ($folder in $folders) {
+                $files       = Get-ChildItem -LiteralPath $folder.FullName -Recurse -File -ErrorAction SilentlyContinue
+                $folderBytes = [long]($files | Measure-Object -Property Length -Sum).Sum
+                $totalFsBytes += $folderBytes
+                $folderSizes.Add(@{ Name = $folder.Name; Bytes = $folderBytes })
+                foreach ($file in $files) {
+                    $ext = if ($file.Extension) { $file.Extension.ToLower() } else { '(no ext)' }
+                    if (-not $formatCounts[$ext]) { $formatCounts[$ext] = @{ Count = 0; Bytes = [long]0 } }
+                    $formatCounts[$ext].Count++
+                    $formatCounts[$ext].Bytes += $file.Length
+                }
+            }
+        }
+
+        Write-Log ("    Actual disk usage : {0}  ({1:N0} artist folders)" -f (Format-Bytes $totalFsBytes), $totalFolders) 'White'
+        Write-Log ''
+        Write-Log '    File formats:' 'DarkGray'
+        foreach ($f in $formatCounts.GetEnumerator() | Sort-Object { $_.Value.Bytes } -Descending | Select-Object -First 8) {
+            $pct = if ($totalFsBytes -gt 0) { [math]::Round($f.Value.Bytes / $totalFsBytes * 100, 1) } else { 0 }
+            Write-Log ("      {0,-10} {1,6:N0} files   {2,10}   ({3,5}%)" -f $f.Key, $f.Value.Count, (Format-Bytes $f.Value.Bytes), $pct) 'DarkGray'
+        }
+        Write-Log ''
+        Write-Log '    Largest artists:' 'DarkGray'
+        foreach ($item in $folderSizes | Sort-Object { $_.Bytes } -Descending | Select-Object -First 10) {
+            Write-Log ("      {0,-60} {1}" -f $item.Name, (Format-Bytes $item.Bytes)) 'DarkGray'
+        }
+    }
+}
+
+function Invoke-MediaDashboard {
+    Start-Log 'FolderBoy_Dashboard'
+
+    Write-Log ''
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log '   FolderBoy  |  Media Dashboard' 'Cyan'
+    Write-Log ('   {0}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) 'Cyan'
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log ''
+
+    # Select app
+    $appOptions = @()
+    if ($RadarrConfig.Enabled) { $appOptions += 'Radarr' }
+    if ($SonarrConfig.Enabled) { $appOptions += 'Sonarr' }
+    if ($LidarrConfig.Enabled) { $appOptions += 'Lidarr' }
+    $appOptions += 'All apps'
+
+    $appChoice   = Select-SubMode 'Select app:' $appOptions
+    $selectedApp = $appOptions[$appChoice - 1]
+
+    # Select path (only for single app with multiple paths)
+    $selectedPaths = $null
+    if ($selectedApp -ne 'All apps') {
+        $cfg = switch ($selectedApp) {
+            'Radarr' { $RadarrConfig }
+            'Sonarr' { $SonarrConfig }
+            'Lidarr' { $LidarrConfig }
+        }
+        if ($cfg.Paths.Count -gt 1) {
+            $pathOptions = @($cfg.Paths) + 'All paths'
+            $pathChoice  = Select-SubMode ("Select path for {0}:" -f $selectedApp) $pathOptions
+            if ($pathChoice -lt $pathOptions.Count) {
+                $selectedPaths = @($cfg.Paths[$pathChoice - 1])
+            }
+        }
+    }
+
+    # Select mode
+    $modeChoice = Select-SubMode 'Select mode:' @(
+        'Quick -- API data only (fast)'
+        'Full  -- API + filesystem scan (slower, more detail)'
+    )
+    $fullScan  = ($modeChoice -eq 2)
+    $modeLabel = if ($fullScan) { 'Full' } else { 'Quick' }
+
+    Write-Log ''
+    Write-Log ("  App: {0}   |   Mode: {1}" -f $selectedApp, $modeLabel) 'Yellow'
+    if ($fullScan) {
+        Write-Log '  Full mode scans the filesystem -- this may take several minutes on large libraries.' 'DarkGray'
+    }
+
+    switch ($selectedApp) {
+        'Radarr'   { Get-RadarrDashboard $selectedPaths $fullScan }
+        'Sonarr'   { Get-SonarrDashboard $selectedPaths $fullScan }
+        'Lidarr'   { Get-LidarrDashboard $selectedPaths $fullScan }
+        'All apps' {
+            if ($RadarrConfig.Enabled) { Get-RadarrDashboard $null $fullScan }
+            if ($SonarrConfig.Enabled) { Get-SonarrDashboard $null $fullScan }
+            if ($LidarrConfig.Enabled) { Get-LidarrDashboard $null $fullScan }
+        }
+    }
+
+    Write-Log ''
+    Write-Log ("  Dashboard report saved to: {0}" -f $Script:LogFile) 'Cyan'
+}
+
+# ================================================================
 #  MAIN MENU
 # ================================================================
 function Show-MainMenu {
@@ -1643,7 +2006,8 @@ function Show-MainMenu {
     Write-Host '  (4) Lidarr Folder Renamer -- rename artist folders to standard format'
     Write-Host '  (5) Orphan Scanner       -- find media not managed by any *arr app'
     Write-Host '  (6) Full Run             -- all Renamers then Scanner (recommended workflow)'
-    Write-Host '  (7) Exit'
+    Write-Host '  (7) Media Dashboard      -- library statistics and disk usage report'
+    Write-Host '  (8) Exit'
     Write-Host ''
 
     if ($Script:DashboardCache) {
@@ -1713,7 +2077,7 @@ function Add-SessionEntry ([string]$Entry) {
 
 do {
     Show-MainMenu $SessionLog
-    do { $menuChoice = Read-Host '  Choice' } until ($menuChoice -in '1','2','3','4','5','6','7')
+    do { $menuChoice = Read-Host '  Choice' } until ($menuChoice -in '1','2','3','4','5','6','7','8')
 
     switch ($menuChoice) {
 
@@ -1856,16 +2220,21 @@ do {
         }
 
         '7' {
+            Invoke-MediaDashboard
+            Add-SessionEntry 'Media Dashboard -- complete'
+        }
+
+        '8' {
             Write-Host ''
             Write-Host '  Goodbye.' -ForegroundColor Cyan
             Write-Host ''
         }
     }
 
-    if ($menuChoice -ne '7') {
+    if ($menuChoice -ne '8') {
         Write-Host ''
         Write-Host '  Press any key to return to the main menu...' -ForegroundColor DarkGray
         $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
     }
 
-} while ($menuChoice -ne '7')
+} while ($menuChoice -ne '8')
