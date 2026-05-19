@@ -16,6 +16,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.5.2] - 2026-05-19
+
+### Changed
+- **Lidarr Dashboard album display** -- the album line now shows monitored count,
+  on-disk count, and not-downloaded count separately, making the gap between
+  Lidarr's full catalogue and what is actually on disk immediately clear.
+  e.g. `8,840 monitored  |  4,397 on disk  (4,443 not downloaded)`. Yellow
+  when there are undownloaded albums, white when all monitored albums are on disk.
+- **Lidarr Dashboard track count** -- added `Tracks on disk` line showing the
+  total track file count summed from album statistics, enabling direct comparison
+  against Plex/Tautulli track counts.
+
+---
+
 ## [0.5.1] - 2026-05-18
 
 ### Fixed

@@ -1,5 +1,5 @@
 # ================================================================
-#  FolderBoy.ps1  |  Media Library Manager  |  v0.5.1
+#  FolderBoy.ps1  |  Media Library Manager  |  v0.5.2
 #  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
@@ -1758,7 +1758,6 @@ function Get-SonarrDashboard ([string[]]$Paths, [bool]$FullScan) {
     $monitored   = ($series | Where-Object { $_.monitored }).Count
     $unmonitored = $total - $monitored
 
-    # Episode stats and size from series.statistics (no extra API call needed)
     $totalEps   = [long]0
     $epsOnDisk  = [long]0
     $totalBytes = [long]0
@@ -1771,11 +1770,8 @@ function Get-SonarrDashboard ([string[]]$Paths, [bool]$FullScan) {
     }
     $epsMissing = $totalEps - $epsOnDisk
 
-    # Quality breakdown -- fetch episode files for series that have files,
-    # batching by seriesId query parameter to avoid 400 on bulk endpoint.
-    # Cap at top 20 series by episode count to keep it fast in Quick mode.
     Write-Log '  Fetching quality breakdown (sampling top series)...' 'DarkGray'
-    $qualityCounts = @{}
+    $qualityCounts   = @{}
     $seriesWithFiles = @($series | Where-Object { $_.statistics.episodeFileCount -gt 0 } |
                          Sort-Object { $_.statistics.episodeFileCount } -Descending |
                          Select-Object -First 20)
@@ -1866,15 +1862,18 @@ function Get-LidarrDashboard ([string[]]$Paths, [bool]$FullScan) {
         return
     }
 
-    $total        = $artists.Count
-    $monitored    = ($artists | Where-Object { $_.monitored }).Count
-    $unmonitored  = $total - $monitored
-    $totalAlbums  = if ($albums) { $albums.Count } else { 0 }
-    $albumsOnDisk = if ($albums) { ($albums | Where-Object { $_.statistics.trackFileCount -gt 0 }).Count } else { 0 }
+    $total           = $artists.Count
+    $monitored       = ($artists | Where-Object { $_.monitored }).Count
+    $unmonitored     = $total - $monitored
+    $totalAlbums     = if ($albums) { $albums.Count } else { 0 }
+    $albumsOnDisk    = if ($albums) { ($albums | Where-Object { $_.statistics.trackFileCount -gt 0 }).Count } else { 0 }
+    $albumsNotOnDisk = $totalAlbums - $albumsOnDisk
+    $tracksOnDisk    = if ($albums) { [long]($albums | ForEach-Object { [long]$_.statistics.trackFileCount } | Measure-Object -Sum).Sum } else { [long]0 }
 
     Write-Log ("  Total artists     : {0,6:N0}" -f $total) 'White'
     Write-Log ("  Monitored         : {0,6:N0}  |  Unmonitored: {1:N0}" -f $monitored, $unmonitored) 'White'
-    Write-Log ("  Total albums      : {0,6:N0}  |  With files: {1:N0}" -f $totalAlbums, $albumsOnDisk) 'White'
+    Write-Log ("  Total albums      : {0,6:N0} monitored  |  {1:N0} on disk  ({2:N0} not downloaded)" -f $totalAlbums, $albumsOnDisk, $albumsNotOnDisk) $(if ($albumsNotOnDisk -gt 0) { 'Yellow' } else { 'White' })
+    Write-Log ("  Tracks on disk    : {0,6:N0}" -f $tracksOnDisk) 'White'
     Write-Log ("  Size on disk      : N/A in Quick mode -- run Full mode for filesystem size") 'DarkGray'
 
     if ($FullScan) {
@@ -1934,7 +1933,6 @@ function Invoke-MediaDashboard {
     Write-Log '  ============================================================' 'Cyan'
     Write-Log ''
 
-    # Select app
     $appOptions = @()
     if ($RadarrConfig.Enabled) { $appOptions += 'Radarr' }
     if ($SonarrConfig.Enabled) { $appOptions += 'Sonarr' }
@@ -1944,7 +1942,6 @@ function Invoke-MediaDashboard {
     $appChoice   = Select-SubMode 'Select app:' $appOptions
     $selectedApp = $appOptions[$appChoice - 1]
 
-    # Select path (only for single app with multiple paths)
     $selectedPaths = $null
     if ($selectedApp -ne 'All apps') {
         $cfg = switch ($selectedApp) {
@@ -1961,7 +1958,6 @@ function Invoke-MediaDashboard {
         }
     }
 
-    # Select mode
     $modeChoice = Select-SubMode 'Select mode:' @(
         'Quick -- API data only (fast)'
         'Full  -- API + filesystem scan (slower, more detail)'
