@@ -176,8 +176,8 @@ $twoItems.Add(@{ Path = 'C:\Test\B'; App = 'Sonarr'; Size = '2 GB'; Bytes = [lon
 $sorted2 = @($twoItems | Sort-Object { $_.Path })
 T 'OS2' 'Two-item sort in @() -> Count=2' $sorted2.Count 2
 
-# ── Log file prefixes (checklist 9.2) ─────────────────────────────────────────
-$src = Get-Content 'D:\GitHub\FolderBoy\FolderBoy.ps1' -Raw
+# ── Log file prefixes (checklist 10.2) ────────────────────────────────────────
+$src = Get-Content (Join-Path $PSScriptRoot 'FolderBoy.ps1') -Raw
 T 'LF1' "Cleaner uses Start-Log 'FolderBoy'"              ($src -match "Start-Log 'FolderBoy'")              $true
 T 'LF2' "Sonarr renamer uses Start-Log 'FolderBoy_SonarrRenamer'" ($src -match "Start-Log 'FolderBoy_SonarrRenamer'") $true
 T 'LF3' "Radarr renamer uses Start-Log 'FolderBoy_RadarrRenamer'" ($src -match "Start-Log 'FolderBoy_RadarrRenamer'") $true
@@ -206,6 +206,23 @@ T 'CF17' 'No stray SonarrTagger references'              ($src -notmatch 'Sonarr
 T 'CF18' 'No stray Invoke-SonarrGet references'         ($src -notmatch 'Invoke-SonarrGet')                  $true
 T 'CF19' 'No stray FolderBoy_Tagger log prefix'         ($src -notmatch "Start-Log 'FolderBoy_Tagger'")     $true
 T 'CF20' 'No stray Sonarr Folder Tagger menu text'      ($src -notmatch 'Sonarr Folder Tagger')              $true
+
+# ── Media Dashboard code-level checks ────────────────────────────────────────
+T 'DB1'  'Invoke-MediaDashboard defined'          ($src -match 'function Invoke-MediaDashboard')    $true
+T 'DB2'  'Get-RadarrDashboard defined'            ($src -match 'function Get-RadarrDashboard')      $true
+T 'DB3'  'Get-SonarrDashboard defined'            ($src -match 'function Get-SonarrDashboard')      $true
+T 'DB4'  'Get-LidarrDashboard defined'            ($src -match 'function Get-LidarrDashboard')      $true
+T 'DB5'  'Dashboard log prefix present'           ($src -match "Start-Log 'FolderBoy_Dashboard'")   $true
+T 'DB6'  'Quick mode label present'               ($src -match "'Quick'")                           $true
+T 'DB7'  'Full mode filesystem scan present'      ($src -match '\$FullScan')                        $true
+T 'DB8'  'qualityprofile endpoint used'           ($src -match "'qualityprofile'")                  $true
+T 'DB9'  'episodefile seriesId endpoint used'     ($src -match 'episodefile\?seriesId=')            $true
+T 'DB10' 'Album not-downloaded count present'     ($src -match 'albumsNotOnDisk')                   $true
+T 'DB11' 'Track count present'                    ($src -match 'tracksOnDisk')                      $true
+T 'DB12' 'TB format in Format-Bytes'              ($src -match '1TB')                               $true
+T 'DB13' 'Dashboard menu option 7 present'        ($src -match '\(7\) Media Dashboard')             $true
+T 'DB14' 'Exit is option 8'                       ($src -match '\(8\) Exit')                        $true
+T 'DB15' 'menuChoice includes 8'                  ($src -match "'1','2','3','4','5','6','7','8'")   $true
 
 # ── Print results ─────────────────────────────────────────────────────────────
 Write-Host ''

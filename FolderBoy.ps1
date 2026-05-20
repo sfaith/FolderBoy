@@ -470,10 +470,12 @@ function Invoke-FolderBoyCleaner {
     }
     Write-Log ("    ({0}) All libraries" -f $allKey)
     Write-Log ("    ({0}) {1}" -f $customKey, $FolderBoyPresets[$customKey].Label)
+    Write-Log '    (M) Return to main menu' 'DarkGray'
     Write-Log ''
 
-    $validKeys = @($FolderBoyPresets.Keys) + $allKey
+    $validKeys = @($FolderBoyPresets.Keys) + $allKey + 'M'
     do { $choice = (Read-Host '  Choice').ToUpper() } until ($validKeys -contains $choice)
+    if ($choice -eq 'M') { return $null }
 
     if ($choice -eq $allKey) {
         if ($LiveDelete) {
@@ -542,9 +544,11 @@ function Invoke-FolderBoyCleaner {
                 Write-Log ("    ({0}) {1}" -f ($i + 1), $preset.Paths[$i])
             }
             Write-Log ("    ({0}) All paths" -f ($preset.Paths.Count + 1))
+            Write-Log '    (M) Return to main menu' 'DarkGray'
             Write-Log ''
             do {
                 $pathChoice = Read-Host '  Choice'
+                if ($pathChoice.ToUpper() -eq 'M') { return $null }
                 $pathIdx = 0
                 $validPath = [int]::TryParse($pathChoice, [ref]$pathIdx) -and
                              $pathIdx -ge 1 -and $pathIdx -le ($preset.Paths.Count + 1)
@@ -822,8 +826,10 @@ function Invoke-RadarrFolderRenamer {
     Write-Log '                    Example: The Dark Knight (2008)'
     Write-Log '    (2) Plex     -- {Movie CleanTitle} ({Release Year}) {imdb-{ImdbId}}'
     Write-Log '                    Example: The Dark Knight (2008) {imdb-tt0468569}'
+    Write-Log '    (M) Return to main menu' 'DarkGray'
     Write-Log ''
-    do { $formatChoice = Read-Host '  Choice' } until ($formatChoice -in '1','2')
+    do { $formatChoice = Read-Host '  Choice' } until ($formatChoice -in '1','2' -or $formatChoice.ToUpper() -eq 'M')
+    if ($formatChoice.ToUpper() -eq 'M') { return }
     $usePlex = ($formatChoice -eq '2')
 
     if ($usePlex) {
@@ -1418,11 +1424,13 @@ function Invoke-OrphanInteractiveDelete ($RadarrStats, $SonarrStats, $LidarrStat
     Write-Log ("  (1) NOT IN ARR only             ({0,4} items -- high confidence)" -f $notInArr.Count) 'White'
     Write-Log ("  (2) NOT IN ARR + NEEDS REVIEW   ({0,4} items)" -f ($notInArr.Count + $needsReview.Count)) 'White'
     Write-Log ("  (3) ALL flagged items            ({0,4} items -- includes low-confidence)" -f $totalAll) 'White'
-    Write-Log ("  (4) Exit without deleting") 'White'
+    Write-Log '  (Q) Exit without deleting' 'DarkGray'
+    Write-Log '  (M) Return to main menu' 'DarkGray'
     Write-Log ''
 
-    do { $catChoice = Read-Host '  Choice' } until ($catChoice -in '1','2','3','4')
-    if ($catChoice -eq '4') { Write-Log '  Exited. No changes made.' 'Yellow'; return }
+    do { $catChoice = (Read-Host '  Choice').ToUpper() } until ($catChoice -in '1','2','3','Q','M')
+    if ($catChoice -eq 'Q') { Write-Log '  Exited. No changes made.' 'Yellow'; return }
+    if ($catChoice -eq 'M') { Write-Log '  Returning to main menu.' 'Yellow'; return }
 
     $candidates = [System.Collections.Generic.List[hashtable]]::new()
     foreach ($item in $notInArr) { $candidates.Add($item) }
@@ -1940,6 +1948,7 @@ function Invoke-MediaDashboard {
     $appOptions += 'All apps'
 
     $appChoice   = Select-SubMode 'Select app:' $appOptions
+    if ($appChoice -eq 0) { return }
     $selectedApp = $appOptions[$appChoice - 1]
 
     $selectedPaths = $null
@@ -1952,6 +1961,7 @@ function Invoke-MediaDashboard {
         if ($cfg.Paths.Count -gt 1) {
             $pathOptions = @($cfg.Paths) + 'All paths'
             $pathChoice  = Select-SubMode ("Select path for {0}:" -f $selectedApp) $pathOptions
+            if ($pathChoice -eq 0) { return }
             if ($pathChoice -lt $pathOptions.Count) {
                 $selectedPaths = @($cfg.Paths[$pathChoice - 1])
             }
@@ -1962,6 +1972,7 @@ function Invoke-MediaDashboard {
         'Quick -- API data only (fast)'
         'Full  -- API + filesystem scan (slower, more detail)'
     )
+    if ($modeChoice -eq 0) { return }
     $fullScan  = ($modeChoice -eq 2)
     $modeLabel = if ($fullScan) { 'Full' } else { 'Quick' }
 
@@ -2052,9 +2063,11 @@ function Select-SubMode ([string]$Prompt, [string[]]$Options) {
     for ($i = 0; $i -lt $Options.Count; $i++) {
         Write-Host ("    ({0}) {1}" -f ($i + 1), $Options[$i])
     }
+    Write-Host '    (M) Return to main menu' -ForegroundColor DarkGray
     Write-Host ''
     do {
         $c = Read-Host '  Choice'
+        if ($c.ToUpper() -eq 'M') { return 0 }
         $idx = 0
         $valid = [int]::TryParse($c, [ref]$idx) -and $idx -ge 1 -and $idx -le $Options.Count
     } until ($valid)
@@ -2065,6 +2078,7 @@ function Select-SubMode ([string]$Prompt, [string[]]$Options) {
 #  ENTRY POINT
 # ================================================================
 $SessionLog = [System.Collections.Generic.List[string]]::new()
+$Script:ReturnedToMenu = $false
 
 function Add-SessionEntry ([string]$Entry) {
     $time = Get-Date -Format 'HH:mm'
@@ -2082,8 +2096,10 @@ do {
                 'Dry Run     -- preview which folders would be deleted (safe, no changes)'
                 'Live Delete -- permanently delete folders with no media files'
             )
+            if ($mode -eq 0) { $Script:ReturnedToMenu = $true; break }
             $modeStr = if ($mode -eq 2) { 'Live Delete' } else { 'Dry Run' }
             $cleanerResult = Invoke-FolderBoyCleaner -LiveDelete ($mode -eq 2)
+            if (-not $cleanerResult) { $Script:ReturnedToMenu = $true; break }
             $pathSummary = if ($cleanerResult.Paths -contains 'All') {
                 'All Libraries'
             } elseif ($cleanerResult.Paths.Count -eq 1) {
@@ -2104,6 +2120,7 @@ do {
                     'Dry Run     -- preview which folders would be renamed (safe, no changes)'
                     'Live Rename -- rename folders on disk and update Sonarr paths via API'
                 )
+                if ($mode -eq 0) { $Script:ReturnedToMenu = $true; break }
                 $modeStr = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-SonarrRenamer -LiveRename ($mode -eq 2)
                 Add-SessionEntry ("Sonarr Folder Renamer [{0}] -- complete" -f $modeStr)
@@ -2120,6 +2137,7 @@ do {
                     'Dry Run     -- preview which folders would be renamed (safe, no changes)'
                     'Live Rename -- rename folders on disk and update Radarr paths via API'
                 )
+                if ($mode -eq 0) { $Script:ReturnedToMenu = $true; break }
                 $modeStr = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-RadarrFolderRenamer -LiveRename ($mode -eq 2)
                 Add-SessionEntry ("Radarr Folder Renamer [{0}] -- complete" -f $modeStr)
@@ -2136,6 +2154,7 @@ do {
                     'Dry Run     -- preview which folders would be renamed (safe, no changes)'
                     'Live Rename -- rename folders on disk and update Lidarr paths via API'
                 )
+                if ($mode -eq 0) { $Script:ReturnedToMenu = $true; break }
                 $modeStr = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-LidarrFolderRenamer -LiveRename ($mode -eq 2)
                 Add-SessionEntry ("Lidarr Folder Renamer [{0}] -- complete" -f $modeStr)
@@ -2149,6 +2168,7 @@ do {
                 'Sonarr only'
                 'Lidarr only'
             )
+            if ($scope -eq 0) { $Script:ReturnedToMenu = $true; break }
             $scopeStr = switch ($scope) {
                 1 { 'All' }
                 2 { 'Radarr' }
@@ -2159,6 +2179,7 @@ do {
                 'Scan Only     -- report orphaned folders (safe, no changes)'
                 'Scan + Delete -- report then interactively select folders to delete'
             )
+            if ($mode -eq 0) { $Script:ReturnedToMenu = $true; break }
             $modeStr = if ($mode -eq 2) { 'Scan + Delete' } else { 'Scan Only' }
             Invoke-OrphanScanner -WithDelete ($mode -eq 2) -Scope $scopeStr
             Add-SessionEntry ("Orphan Scanner [{0}] [{1}] -- complete" -f $modeStr, $scopeStr)
@@ -2175,6 +2196,7 @@ do {
                     'Dry Run     -- preview renames only (safe, no changes)'
                     'Live Rename -- rename folders and update Sonarr'
                 )
+                if ($sonarrMode -eq 0) { $Script:ReturnedToMenu = $true; break }
                 $sonarrModeStr = if ($sonarrMode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-SonarrRenamer -LiveRename ($sonarrMode -eq 2)
                 Add-SessionEntry ("Sonarr Folder Renamer [{0}] -- complete" -f $sonarrModeStr)
@@ -2187,6 +2209,7 @@ do {
                     'Dry Run     -- preview renames only (safe, no changes)'
                     'Live Rename -- rename folders and update Radarr'
                 )
+                if ($radarrMode -eq 0) { $Script:ReturnedToMenu = $true; break }
                 $radarrModeStr = if ($radarrMode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-RadarrFolderRenamer -LiveRename ($radarrMode -eq 2)
                 Add-SessionEntry ("Radarr Folder Renamer [{0}] -- complete" -f $radarrModeStr)
@@ -2199,6 +2222,7 @@ do {
                     'Dry Run     -- preview renames only (safe, no changes)'
                     'Live Rename -- rename folders and update Lidarr'
                 )
+                if ($lidarrMode -eq 0) { $Script:ReturnedToMenu = $true; break }
                 $lidarrModeStr = if ($lidarrMode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-LidarrFolderRenamer -LiveRename ($lidarrMode -eq 2)
                 Add-SessionEntry ("Lidarr Folder Renamer [{0}] -- complete" -f $lidarrModeStr)
@@ -2210,6 +2234,7 @@ do {
                 'Scan Only     -- report orphans only (safe, no changes)'
                 'Scan + Delete -- report then interactively select folders to delete'
             )
+            if ($scanMode -eq 0) { $Script:ReturnedToMenu = $true; break }
             $scanModeStr = if ($scanMode -eq 2) { 'Scan + Delete' } else { 'Scan Only' }
             Invoke-OrphanScanner -WithDelete ($scanMode -eq 2) -Scope 'All'
             Add-SessionEntry ("Orphan Scanner [{0}] [All] -- complete" -f $scanModeStr)
@@ -2227,10 +2252,11 @@ do {
         }
     }
 
-    if ($menuChoice -ne '8') {
+    if ($menuChoice -ne '8' -and -not $Script:ReturnedToMenu) {
         Write-Host ''
         Write-Host '  Press any key to return to the main menu...' -ForegroundColor DarkGray
         $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
     }
+    $Script:ReturnedToMenu = $false
 
 } while ($menuChoice -ne '8')

@@ -1,5 +1,5 @@
 # ================================================================
-#  FolderBoy.config.example.ps1  |  Configuration Template  |  v0.4.3
+#  FolderBoy.config.example.ps1  |  Configuration Template  |  v0.5.2
 #
 #  Copy this file to FolderBoy.config.ps1 and fill in your
 #  own values before running FolderBoy for the first time.

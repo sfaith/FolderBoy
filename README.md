@@ -1,8 +1,8 @@
 # FolderBoy — Media Library Manager
 
-**Version: 0.4.6**
+**Version: 0.5.2**
 
-A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy helps you keep your library clean by renaming series, movie, and artist folders to standard formats, finding orphaned media, and removing folders that contain no recognized media files.
+A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy helps you keep your library clean by renaming series, movie, and artist folders to standard formats, finding orphaned media, removing folders that contain no recognized media files, and generating detailed library statistics.
 
 ---
 
@@ -13,13 +13,12 @@ Scans your media root folders and identifies subfolders that contain no media fi
 
 - No \*arr API calls required — purely filesystem-based
 - Configurable per-preset file extension lists for TV, Movies, Music, or Custom
+- All Libraries mode runs all presets in sequence with a combined summary
 - Reports non-media file types found in flagged folders so you know what you're deleting
 - Dry Run mode shows exactly what would be deleted before you commit
 
 ### 2. Sonarr Folder Renamer
 Finds Sonarr series folders missing an `{imdb-ttXXXXXXX}` ID tag, renames them on disk to match Sonarr's configured Series Folder Format, and updates the series path in Sonarr via API so everything stays in sync.
-
-Running this before the Orphan Scanner gives the scanner its most reliable results — ID-tagged folders are matched with high confidence.
 
 - Only renames folders missing an ID tag — already-tagged folders are skipped
 - Detects folders where the name doesn't match Sonarr's title and skips them rather than renaming incorrectly
@@ -30,7 +29,6 @@ Running this before the Orphan Scanner gives the scanner its most reliable resul
 Finds Radarr movie folders that don't match the recommended naming format and renames them on disk, then updates the movie path in Radarr via API so everything stays in sync.
 
 - Supports two target formats: Minimum (`{Movie CleanTitle} ({Release Year})`) and Plex (`{Movie CleanTitle} ({Release Year}) {imdb-{ImdbId}}`)
-- Format is selected once at the start of each run
 - Only renames folders that don't already match the target format
 - Automatically rolls back disk renames if the Radarr API update fails
 - Dry Run mode previews all renames before applying
@@ -61,10 +59,16 @@ Compares what is on disk against what each \*arr app manages. Produces a categor
 | NEEDS REVIEW | No ID tag and no name match — medium confidence, verify before deleting |
 | NAME MATCHED | No ID tag but name matched — counted as matched, shown for awareness |
 
-The interactive delete flow lets you review each item individually (`D` delete / `S` skip / `Q` quit), queue deletions, see a size summary, and type `YES` to confirm before anything is removed.
-
 ### 6. Full Run
 Runs all three Folder Renamers (Sonarr, Radarr, Lidarr) then the Orphan Scanner. This is the recommended workflow — renaming first maximizes ID tag coverage and gives the scanner its highest confidence results. Disabled apps are skipped automatically.
+
+### 7. Media Dashboard
+Generates a detailed statistics report for your media libraries. Select an app (Radarr, Sonarr, Lidarr, or all) and a mode:
+
+- **Quick mode** (API only, fast) — total counts, monitored vs unmonitored, on disk vs missing, size on disk, quality profile breakdown, and actual file quality breakdown
+- **Full mode** (API + filesystem scan) — everything in Quick plus actual disk usage, file format breakdown with percentages, and top 10 largest items
+
+Report is automatically saved to `Logs\FolderBoy_Dashboard_*.log`.
 
 ---
 
@@ -222,10 +226,6 @@ Go to **Settings → Media Management → Show Advanced → Series Folder Format
 ```
 Example: `The Wire (2002) {imdb-tt0306414}`
 
-This is the format the Sonarr Folder Renamer enforces. Without the `{imdb-{ImdbId}}` token, newly added series will not have ID tags and the Orphan Scanner will fall back to name-based matching for those folders.
-
-> **Note from TRaSH Guides:** Folder names are written to the database when a series is first added. If the IMDb ID is missing in Sonarr at that time, the folder will have a blank ID. Run the Sonarr Folder Renamer after adding the ID in Sonarr to fix existing folders.
-
 **Full guide:** https://trash-guides.info/Sonarr/Sonarr-recommended-naming-scheme/
 
 ---
@@ -238,17 +238,11 @@ Go to **Settings → Media Management → Show Advanced → Movie Folder Format*
 ```
 {Movie CleanTitle} ({Release Year})
 ```
-Example: `The Dark Knight (2008)`
 
 **Optional (Plex with IMDb matching):**
 ```
 {Movie CleanTitle} ({Release Year}) {imdb-{ImdbId}}
 ```
-Example: `The Dark Knight (2008) {imdb-tt0468569}`
-
-> **Note from TRaSH Guides:** Radarr sets the folder name when a movie is first added. If the IMDb ID was missing at that time, the folder will have a blank ID tag. Adding IDs to the *filename* format instead of the folder format avoids this, since filenames are generated fresh on each download.
->
-> FolderBoy's Orphan Scanner uses **path-based matching** for Radarr and does not require ID tags in folder names.
 
 **Full guide:** https://trash-guides.info/Radarr/Radarr-recommended-naming-scheme/
 
@@ -258,24 +252,9 @@ Example: `The Dark Knight (2008) {imdb-tt0468569}`
 
 Go to **Settings → Media Management → Show Advanced**
 
-**Artist Folder Format (recommended):**
-```
-{Artist Name}
-```
+**Artist Folder Format:** `{Artist Name}`
 
-**Album Folder Format (recommended):**
-```
-{Album Title} {(Album Disambiguation)}
-```
-
-> **Why album disambiguation matters:** Without it, two albums with the same title (such as self-titled albums) will write to the same folder and overwrite each other. When no disambiguation exists, Lidarr simply omits the `()` and uses the plain album title.
-
-**Standard Track Format (recommended):**
-```
-{Album Title} {(Album Disambiguation)}/{Artist Name}_{Album Title}_{track:00}_{Track Title}
-```
-
-> **Important:** Enable **Rename Tracks** and **Replace Illegal Characters** in Settings → Media Management *before* you populate your library. Changing naming formats after the library is populated will trigger a full rename of every file the next time Lidarr refreshes each artist — plan accordingly and back up first.
+**Album Folder Format:** `{Album Title} {(Album Disambiguation)}`
 
 **Full guide:** https://wiki.servarr.com/lidarr/naming-guide
 
@@ -285,23 +264,17 @@ Go to **Settings → Media Management → Show Advanced**
 
 For first-time use on an existing library:
 
-1. **Sonarr Folder Renamer → Dry Run** — review which series folders would be renamed. Investigate any `[MISMATCH]` entries and rename those folders manually first.
+1. **Sonarr Folder Renamer → Dry Run** — review which series folders would be renamed
+2. **Sonarr Folder Renamer → Live Rename** — apply the renames
+3. **Radarr Folder Renamer → Dry Run** — review movie folder renames
+4. **Radarr Folder Renamer → Live Rename** — apply the renames
+5. **Lidarr Folder Renamer → Dry Run** — review artist folder renames
+6. **Lidarr Folder Renamer → Live Rename** — apply the renames
+7. **Orphan Scanner → Scan Only** — review the full report
+8. **Orphan Scanner → Scan + Delete** — delete confirmed orphans
+9. **Media Dashboard** — run after initial cleanup to get a baseline of your library stats
 
-2. **Sonarr Folder Renamer → Live Rename** — apply the renames. Sonarr paths are updated automatically via API.
-
-3. **Radarr Folder Renamer → Dry Run** — review which movie folders would be renamed. Choose Minimum or Plex format.
-
-4. **Radarr Folder Renamer → Live Rename** — apply the renames. Radarr paths are updated automatically via API.
-
-5. **Lidarr Folder Renamer → Dry Run** — review which artist folders would be renamed.
-
-6. **Lidarr Folder Renamer → Live Rename** — apply the renames. Lidarr paths are updated automatically via API.
-
-7. **Orphan Scanner → Scan Only** — review the full report. Investigate `NEEDS REVIEW` items before deciding whether to delete them.
-
-8. **Orphan Scanner → Scan + Delete** — go through each flagged item, skip what you want to keep, queue what you want to delete, confirm with `YES`.
-
-9. **Use option 6 (Full Run)** for ongoing maintenance — runs all three Folder Renamers then the Orphan Scanner in a single session.
+Use **option 6 (Full Run)** for ongoing maintenance.
 
 ---
 
@@ -314,6 +287,8 @@ For first-time use on an existing library:
 | `FolderBoy.bat` | ✅ Yes | One-click launcher |
 | `README.md` | ✅ Yes | This file |
 | `.gitignore` | ✅ Yes | Excludes config and log files |
+| `FolderBoy_LogicTests.ps1` | ✅ Yes | Standalone logic test suite |
+| `FolderBoy_Test_Checklist.md` | ✅ Yes | Interactive test checklist |
 | `FolderBoy.config.ps1` | ❌ No (gitignored) | Your config with real API keys and paths |
 | `Logs\` | ❌ No (gitignored) | Runtime logs generated by FolderBoy |
 
@@ -321,7 +296,7 @@ For first-time use on an existing library:
 
 ## Log Files
 
-Every run saves a timestamped log file to the `Logs\` subfolder next to `FolderBoy.ps1`. The folder is created automatically on first run.
+Every run saves a timestamped log file to the `Logs\` subfolder next to `FolderBoy.ps1`.
 
 | Tool | Log filename |
 |---|---|
@@ -330,8 +305,7 @@ Every run saves a timestamped log file to the `Logs\` subfolder next to `FolderB
 | Radarr Folder Renamer | `FolderBoy_RadarrRenamer_YYYYMMDD_HHMMSS.log` |
 | Lidarr Folder Renamer | `FolderBoy_LidarrRenamer_YYYYMMDD_HHMMSS.log` |
 | Orphan Scanner | `FolderBoy_Scanner_YYYYMMDD_HHMMSS.log` |
-
-Logs contain the full console output including all renamed, deleted, skipped, and failed items.
+| Media Dashboard | `FolderBoy_Dashboard_YYYYMMDD_HHMMSS.log` |
 
 ---
 

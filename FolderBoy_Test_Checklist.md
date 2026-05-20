@@ -1,5 +1,5 @@
 # FolderBoy Test Checklist
-Version: 0.4.6 | Updated: 2026-05-17
+Version: 0.5.2 | Updated: 2026-05-19
 
 Check off each item as you test it. Note any unexpected output in the space provided.
 
@@ -126,24 +126,19 @@ Notes:
 
 ---
 
-## 8. Full Run
+## 8. Media Dashboard
 
-- [c] **8.1** Full Run — all tools Dry Run — runs Sonarr → Radarr → Lidarr renamers then Orphan Scanner without errors *(code: CF13 — `Invoke-LidarrFolderRenamer` call in Full Run branch confirmed)*
-- [c] **8.2** Full Run — disabled app in config — skipped gracefully, other tools run normally *(code: CF15 — disabled-skip guards confirmed in all Full Run branches)*
-- [ ] **8.3** Session log after Full Run — shows entries for all tools that ran
-
-Notes:
-```
-
-```
-
----
-
-## 9. Log Files
-
-- [ ] **9.1** All logs written to `Logs\` subdirectory, not script root
-- [x] **9.2** Log filenames use correct prefixes: `FolderBoy_`, `FolderBoy_SonarrRenamer_`, `FolderBoy_RadarrRenamer_`, `FolderBoy_LidarrRenamer_`, `FolderBoy_Scanner_` *(auto: LF1–LF5 — all five `Start-Log` calls confirmed with correct prefixes; LF6 — `Logs\` subdir path confirmed)*
-- [ ] **9.3** Log content matches console output for a sample run
+- [ ] **8.1** Quick mode — Radarr — counts, quality profiles, file quality all populated
+- [ ] **8.2** Quick mode — Sonarr — counts, episode stats, size, quality breakdown sampled from top 20 series
+- [ ] **8.3** Quick mode — Lidarr — artist/album/track counts, album not-downloaded breakdown shown in yellow
+- [ ] **8.4** Quick mode — All apps — all three apps run in sequence, all data correct
+- [ ] **8.5** Full mode — Radarr — filesystem scan runs, actual disk usage and largest items shown
+- [ ] **8.6** Full mode — Sonarr — filesystem scan runs, largest series shown
+- [ ] **8.7** Full mode — Lidarr — filesystem scan runs, format breakdown and largest artists shown
+- [ ] **8.8** Path selection — Radarr with multiple paths — selecting a single path scans only that path
+- [ ] **8.9** Path selection — All paths option scans all configured paths
+- [ ] **8.10** Dashboard report saved to `Logs\FolderBoy_Dashboard_*.log`
+- [ ] **8.11** Session log entry shows `Media Dashboard -- complete` after run
 
 Notes:
 ```
@@ -152,13 +147,39 @@ Notes:
 
 ---
 
-## 10. Edge Cases
+## 9. Full Run
 
-- [ ] **10.1** Run any tool immediately after startup without waiting — no errors
-- [ ] **10.2** Press any key to return to menu repeatedly — no degradation or state issues
-- [ ] **10.3** Run Cleaner Live Delete on a folder that was already deleted between scan and delete — handles gracefully
-- [ ] **10.4** Network share unavailable during scan — `[WARN] Path not found` shown, other paths continue
-- [ ] **10.5** Very long folder path (>80 chars) — output formatting stays readable, no truncation errors
+- [c] **9.1** Full Run — all tools Dry Run — runs Sonarr → Radarr → Lidarr renamers then Orphan Scanner without errors *(code: CF13 — `Invoke-LidarrFolderRenamer` call in Full Run branch confirmed)*
+- [c] **9.2** Full Run — disabled app in config — skipped gracefully, other tools run normally *(code: CF15 — disabled-skip guards confirmed in all Full Run branches)*
+- [ ] **9.3** Session log after Full Run — shows entries for all tools that ran
+
+Notes:
+```
+
+```
+
+---
+
+## 10. Log Files
+
+- [ ] **10.1** All logs written to `Logs\` subdirectory, not script root
+- [x] **10.2** Log filenames use correct prefixes: `FolderBoy_`, `FolderBoy_SonarrRenamer_`, `FolderBoy_RadarrRenamer_`, `FolderBoy_LidarrRenamer_`, `FolderBoy_Scanner_`, `FolderBoy_Dashboard_` *(auto: LF1–LF5, DB5 — all six `Start-Log` calls confirmed with correct prefixes; LF6 — `Logs\` subdir path confirmed)*
+- [ ] **10.3** Log content matches console output for a sample run
+
+Notes:
+```
+
+```
+
+---
+
+## 11. Edge Cases
+
+- [ ] **11.1** Run any tool immediately after startup without waiting — no errors
+- [ ] **11.2** Press any key to return to menu repeatedly — no degradation or state issues
+- [ ] **11.3** Run Cleaner Live Delete on a folder that was already deleted between scan and delete — handles gracefully
+- [ ] **11.4** Network share unavailable during scan — `[WARN] Path not found` shown, other paths continue
+- [ ] **11.5** Very long folder path (>80 chars) — output formatting stays readable, no truncation errors
 
 Notes:
 ```
@@ -178,9 +199,10 @@ Notes:
 | 5. Radarr Renamer | 5 | 0 | 2 | 3 |
 | 6. Lidarr Renamer | 4 | 2 | 2 | 0 |
 | 7. Orphan Scanner | 11 | 2 | 2 | 7 |
-| 8. Full Run | 3 | 0 | 2 | 1 |
-| 9. Log Files | 3 | 1 | 0 | 2 |
-| 10. Edge Cases | 5 | 0 | 0 | 5 |
-| **Total** | **55** | **5** | **16** | **34** |
+| 8. Media Dashboard | 11 | 0 | 0 | 11 |
+| 9. Full Run | 3 | 0 | 2 | 1 |
+| 10. Log Files | 3 | 1 | 0 | 2 |
+| 11. Edge Cases | 5 | 0 | 0 | 5 |
+| **Total** | **66** | **5** | **16** | **45** |
 
 `[x]` = logic test verified · `[c]` = code inspection confirmed · `[ ]` = needs live testing
