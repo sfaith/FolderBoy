@@ -2660,6 +2660,7 @@ function Invoke-MediaFileRenamer {
 
     Write-Log ''
     Write-Log ("  Log saved to: {0}" -f $Script:LogFile) 'Cyan'
+    return $selectedApp
 }
 
 # ================================================================
@@ -3077,9 +3078,11 @@ do {
             ) -Title 'Media File Renamer'
             if ($mode -eq  0) { $Script:ReturnedToMenu = $true; break }
             if ($mode -eq -1) { $Script:QuitRequested  = $true; break }
-            $modeStr = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
-            Invoke-MediaFileRenamer -LiveRename ($mode -eq 2)
-            Add-SessionEntry ("Media File Renamer [{0}]" -f $modeStr)
+            $modeStr    = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
+            $selectedApp = Invoke-MediaFileRenamer -LiveRename ($mode -eq 2)
+            if ($selectedApp) {
+                Add-SessionEntry ("Media File Renamer [{0}] [{1}]" -f $modeStr, $selectedApp)
+            }
         }
     }
 

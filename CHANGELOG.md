@@ -32,6 +32,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   Fixed with a `-SharedLog` parameter: sub-functions call `Start-Log` when invoked
   standalone from Full Run, and skip it when invoked via `Invoke-MediaFileRenamer`
   (Tool 8) which manages the shared log itself.
+- **Media File Renamer session log missing app name** -- `Add-SessionEntry` for Tool 8
+  only recorded mode (Dry Run / Live) but not which app was selected. `Invoke-MediaFileRenamer`
+  now returns `$selectedApp` to the caller; session entry format is now
+  `Media File Renamer [Live Rename] [Sonarr]`. Entry is suppressed on M/Q abort.
 - **README** -- added Prerequisites section (OS, PowerShell, network, filesystem, naming
   conventions), expanded Recommended Naming Conventions with exact format strings and
   direct TRaSH Guide links for all three apps, updated Recommended Workflow to include
