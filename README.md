@@ -341,7 +341,7 @@ TRaSH recommends including track number, title, and quality. Use the Servarr Wik
 
 ### Ongoing maintenance
 
-Use **option 6 (Full Run)** for regular maintenance. The Attended mode walks you through each tool individually; Dry Run All is safe and fast for checking what has drifted.
+Use **option 6 (Full Run)** for regular maintenance. Select **Dry Run All** for a fast, safe check of what has drifted across all 8 tools. Select **Attended** to choose Dry Run or Live for each tool individually as it runs. Use **Live All** only when you're ready to apply everything in one pass.
 
 ---
 
