@@ -19,6 +19,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed (unreleased patches)
 - **Exit message** -- "Goodbye." replaced with a warm, personal thank-you message.
+- **Orphan Scanner path header collision** -- `Clear-Progress` was missing before
+  the `Scanning \\path (N folders)` line in `Invoke-RadarrScan`, `Invoke-SonarrScan`,
+  and `Invoke-LidarrScan`. On multi-path libraries the previous path's progress line
+  was still visible on the right side of the terminal when the next path announced
+  itself. Fixed in all three scanners.
 - **Media File Renamer -- Summary Only mode** -- after selecting app scope, a new
   detail-level prompt lets the user choose between Full listing (all From/To paths,
   original behavior) and Summary only (per-app table only, no per-file lines). Dry

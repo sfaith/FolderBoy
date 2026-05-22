@@ -1262,6 +1262,7 @@ function Invoke-RadarrScan {
             continue
         }
         $folders = Get-ChildItem -LiteralPath $rootPath -Directory -ErrorAction SilentlyContinue
+        Clear-Progress
         Write-Log ("  Scanning {0} ({1} folders)" -f $rootPath, $folders.Count) 'White'
         $orphanRIdx = 0
         foreach ($folder in $folders) {
@@ -1331,6 +1332,7 @@ function Invoke-SonarrScan {
             continue
         }
         $folders = Get-ChildItem -LiteralPath $rootPath -Directory -ErrorAction SilentlyContinue
+        Clear-Progress
         Write-Log ("  Scanning {0} ({1} folders)" -f $rootPath, $folders.Count) 'White'
 
         $orphanSIdx = 0
@@ -1443,6 +1445,7 @@ function Invoke-LidarrScan {
             continue
         }
         $folders = Get-ChildItem -LiteralPath $rootPath -Directory -ErrorAction SilentlyContinue
+        Clear-Progress
         Write-Log ("  Scanning {0} ({1} artist folders)" -f $rootPath, $folders.Count) 'White'
 
         $orphanLIdx = 0
