@@ -221,8 +221,19 @@ T 'DB10' 'Album not-downloaded count present'     ($src -match 'albumsNotOnDisk'
 T 'DB11' 'Track count present'                    ($src -match 'tracksOnDisk')                      $true
 T 'DB12' 'TB format in Format-Bytes'              ($src -match '1TB')                               $true
 T 'DB13' 'Dashboard menu option 7 present'        ($src -match '\(7\) Media Dashboard')             $true
-T 'DB14' 'Exit is option 8'                       ($src -match '\(8\) Exit')                        $true
-T 'DB15' 'menuChoice includes 8'                  ($src -match "'1','2','3','4','5','6','7','8'")   $true
+T 'DB14' 'Media File Renamer is option 8'         ($src -match '\(8\) Media File Renamer')           $true
+T 'DB14b' '(Q) Quit FolderBoy present in menu'   ($src -match '\(Q\) Quit FolderBoy')              $true
+T 'DB15' 'menuChoice includes 8 (maps to File Renamer, not Exit)' ($src -match "'1','2','3','4','5','6','7','8'")   $true
+
+# ── New features added in v0.6.0 ─────────────────────────────────────────────
+T 'CF21' 'Invoke-MediaDashboardDirect defined'         ($src -match 'function Invoke-MediaDashboardDirect')  $true
+T 'CF22' 'Write-Progress2 defined'                     ($src -match 'function Write-Progress2')              $true
+T 'CF23' 'Clear-Progress defined'                      ($src -match 'function Clear-Progress')               $true
+T 'CF24' 'Full Run calls Sonarr File Renamer'          ($src -match 'Invoke-SonarrFileRenamer')              $true
+T 'CF25' 'Full Run calls Radarr File Renamer'          ($src -match 'Invoke-RadarrFileRenamer')              $true
+T 'CF26' 'Full Run calls Lidarr File Renamer'          ($src -match 'Invoke-LidarrFileRenamer')              $true
+T 'CF27' 'Full Run calls Dashboard direct'             ($src -match 'Invoke-MediaDashboardDirect')           $true
+T 'LF7'  'File Renamer log prefix correct'             ($src -match "Start-Log 'FolderBoy_FileRenamer'")     $true
 
 # ── Print results ─────────────────────────────────────────────────────────────
 Write-Host ''

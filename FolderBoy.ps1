@@ -1,9 +1,9 @@
-# ================================================================
-#  FolderBoy.ps1  |  Media Library Manager  |  v0.5.2
+﻿# ================================================================
+#  FolderBoy.ps1  |  Media Library Manager  |  v0.6.0
 #  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
-#  media libraries. Includes seven tools:
+#  media libraries. Includes eight tools:
 #
 #    1. FolderBoy Cleaner      -- removes folders that contain no
 #                                 recognized media files (filesystem
@@ -37,6 +37,14 @@
 #                                 usage, and largest items. Quick mode
 #                                 uses API data only; Full mode adds
 #                                 a filesystem scan.
+#
+#    8. Media File Renamer     -- renames individual media files to
+#                                 match each app's configured naming
+#                                 scheme (TRaSH Guides standard).
+#                                 Previews proposed renames via API
+#                                 before applying. The *arr app
+#                                 performs all renaming -- no direct
+#                                 filesystem manipulation required.
 #
 #  REQUIREMENTS:
 #    - PowerShell 5.1 or later (built into Windows 10/11/Server)
@@ -157,6 +165,22 @@ function Write-Tip ([string]$Message) {
     Write-Log ("  [TIP] {0}" -f $Message) 'DarkCyan'
 }
 
+function Write-Progress2 ([string]$Label, [int]$Current, [int]$Total, [string]$Item = '') {
+    # Console-only \r progress line -- never touches the log file
+    $truncated = if ($Item.Length -gt 52) { $Item.Substring(0, 49) + '...' } else { $Item }
+    $line = if ($Total -gt 0) {
+        '  {0} {1} / {2}  ({3})' -f $Label, $Current, $Total, $truncated
+    } else {
+        '  {0} {1}  ({2})' -f $Label, $Current, $truncated
+    }
+    Write-Host ("`r{0,-90}" -f $line) -NoNewline -ForegroundColor DarkGray
+}
+
+function Clear-Progress {
+    Write-Host ("`r{0}" -f (' ' * 90)) -NoNewline
+    Write-Host "`r" -NoNewline
+}
+
 function Get-FolderSizeBytes ([string]$Path) {
     $bytes = (Get-ChildItem -LiteralPath $Path -Recurse -ErrorAction SilentlyContinue |
               Where-Object { -not $_.PSIsContainer } |
@@ -208,6 +232,21 @@ function Invoke-ArrPut ([hashtable]$Config, [string]$Endpoint, [object]$Body) {
     }
     catch {
         Write-Log ("  [ERROR] PUT {0} -- {1}" -f $uri, $_) 'Red'
+        return $null
+    }
+}
+
+function Invoke-ArrPost ([hashtable]$Config, [string]$Endpoint, [object]$Body) {
+    $uri = "$($Config.BaseUrl.TrimEnd('/'))/api/$($Config.ApiVersion)/$Endpoint"
+    try {
+        $json  = $Body | ConvertTo-Json -Depth 20 -Compress
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        return Invoke-RestMethod -Uri $uri `
+            -Headers @{ 'X-Api-Key' = $Config.ApiKey; 'Content-Type' = 'application/json; charset=utf-8' } `
+            -Method Post -Body $bytes -ErrorAction Stop
+    }
+    catch {
+        Write-Log ("  [ERROR] POST {0} -- {1}" -f $uri, $_) 'Red'
         return $null
     }
 }
@@ -363,9 +402,13 @@ function Invoke-CleanerScan {
                       Where-Object { $_.PSIsContainer } |
                       Sort-Object { $_.FullName.Length } -Descending
 
+        Clear-Progress
         Write-Log ("  Scanning {0}  ({1} subfolders)" -f $root, $allFolders.Count) 'White'
 
+        $cleanerIdx = 0
         foreach ($folder in $allFolders) {
+            $cleanerIdx++
+            Write-Progress2 'Scanning...' $cleanerIdx $allFolders.Count $folder.FullName
             if ($LiveDelete -and -not (Test-Path -LiteralPath $folder.FullName)) { continue }
 
             $hasMedia = Get-ChildItem -LiteralPath $folder.FullName -Recurse -ErrorAction SilentlyContinue |
@@ -388,15 +431,18 @@ function Invoke-CleanerScan {
                 if ($LiveDelete) {
                     try {
                         Remove-Item -LiteralPath $folder.FullName -Recurse -Force -ErrorAction Stop
+                        Clear-Progress
                         Write-Log ("  [DELETED] {0}  ({1} MB)" -f $folder.FullName.PadRight($PathPad), $sizeMB) 'Green'
                         $deleted.Add($folder.FullName)
                         $totalBytes += $sizeBytes
                     } catch {
+                        Clear-Progress
                         Write-Log ("  [FAILED]  {0}" -f $folder.FullName) 'Red'
                         Write-Log ("            {0}" -f $_) 'Red'
                         $failed.Add($folder.FullName)
                     }
                 } else {
+                    Clear-Progress
                     Write-Log ("  [WOULD DELETE] {0}  ({1} MB)" -f $folder.FullName.PadRight($PathPad), $sizeMB) 'Yellow'
                     $toDelete.Add($folder.FullName)
                     $totalBytes += $sizeBytes
@@ -405,6 +451,7 @@ function Invoke-CleanerScan {
         }
     }
 
+    Clear-Progress
     $totalGB = [math]::Round($totalBytes / 1GB, 2)
     $totalMB = [math]::Round($totalBytes / 1MB, 1)
 
@@ -471,10 +518,12 @@ function Invoke-FolderBoyCleaner {
     Write-Log ("    ({0}) All libraries" -f $allKey)
     Write-Log ("    ({0}) {1}" -f $customKey, $FolderBoyPresets[$customKey].Label)
     Write-Log '    (M) Return to main menu' 'DarkGray'
+    Write-Log '    (Q) Quit FolderBoy'      'DarkGray'
     Write-Log ''
 
-    $validKeys = @($FolderBoyPresets.Keys) + $allKey + 'M'
+    $validKeys = @($FolderBoyPresets.Keys) + $allKey + 'M' + 'Q'
     do { $choice = (Read-Host '  Choice').ToUpper() } until ($validKeys -contains $choice)
+    if ($choice -eq 'Q') { $Script:QuitRequested = $true; return $null }
     if ($choice -eq 'M') { return $null }
 
     if ($choice -eq $allKey) {
@@ -545,9 +594,11 @@ function Invoke-FolderBoyCleaner {
             }
             Write-Log ("    ({0}) All paths" -f ($preset.Paths.Count + 1))
             Write-Log '    (M) Return to main menu' 'DarkGray'
+            Write-Log '    (Q) Quit FolderBoy'      'DarkGray'
             Write-Log ''
             do {
                 $pathChoice = Read-Host '  Choice'
+                if ($pathChoice.ToUpper() -eq 'Q') { $Script:QuitRequested = $true; return $null }
                 if ($pathChoice.ToUpper() -eq 'M') { return $null }
                 $pathIdx = 0
                 $validPath = [int]::TryParse($pathChoice, [ref]$pathIdx) -and
@@ -656,7 +707,12 @@ function Invoke-SonarrRenamer {
     Write-SectionHeader 'PROCESSING SERIES'
     Write-Log ''
 
-    foreach ($series in $allSeries | Sort-Object title) {
+    $sortedForRename = @($allSeries | Sort-Object title)
+    $seriesTotal     = $sortedForRename.Count
+    $seriesIdx       = 0
+    foreach ($series in $sortedForRename) {
+        $seriesIdx++
+        Write-Progress2 'Processing series...' $seriesIdx $seriesTotal $series.title
         $currentPath = $series.path.TrimEnd('\').TrimEnd('/')
         $title       = $series.title
         $year        = $series.year
@@ -671,6 +727,7 @@ function Invoke-SonarrRenamer {
         if ($folderName -match '\{imdb-tt\d+\}') { $counts.AlreadyTagged++; continue }
 
         if (-not $imdbId) {
+            Clear-Progress
             Write-Log ("  [NO IMDB ID] {0}" -f $title) 'Yellow'
             $noImdbList.Add($title)
             $counts.NoImdbId++
@@ -679,6 +736,7 @@ function Invoke-SonarrRenamer {
 
         if (-not (Test-Path -LiteralPath $currentPath)) {
             if (-not $SonarrConfig.SuppressMissing) {
+                Clear-Progress
                 Write-Log ("  [MISSING]    {0} -- path not found: {1}" -f $title, $currentPath) 'Yellow'
             }
             $counts.PathMissing++
@@ -686,6 +744,7 @@ function Invoke-SonarrRenamer {
         }
 
         if (-not (Test-TitleMatch $folderName $title $year)) {
+            Clear-Progress
             Write-Log ("  [MISMATCH]   {0}" -f $title) 'Yellow'
             Write-Log ("      Folder : {0}" -f $folderName) 'Yellow'
             Write-Log ("      Sonarr : {0}" -f (Get-CleanTitle $title)) 'Yellow'
@@ -700,12 +759,14 @@ function Invoke-SonarrRenamer {
         if ($folderName -eq $newFolderName) { $counts.AlreadyTagged++; continue }
 
         if (-not $LiveRename) {
+            Clear-Progress
             Write-Log ("  [WOULD RENAME]") 'White'
             Write-Log ("      From : {0}" -f $currentPath) 'White'
             Write-Log ("      To   : {0}" -f $newPath) 'Cyan'
             $counts.Renamed++
         } else {
             if ((Test-Path -LiteralPath $newPath) -and ($newPath -ne $currentPath)) {
+                Clear-Progress
                 Write-Log ("  [CONFLICT]   {0} -- target folder already exists." -f $title) 'Red'
                 $failedList.Add(("{0} -- target folder already exists" -f $title))
                 $counts.Failed++
@@ -716,11 +777,13 @@ function Invoke-SonarrRenamer {
                 $series.path = $newPath
                 $result = Invoke-ArrPut $SonarrConfig "series/$seriesId" $series
                 if ($result) {
+                    Clear-Progress
                     Write-Log ("  [RENAMED]") 'Green'
                     Write-Log ("      From : {0}" -f $currentPath) 'Green'
                     Write-Log ("      To   : {0}" -f $newPath) 'Green'
                     $counts.Renamed++
                 } else {
+                    Clear-Progress
                     Write-Log ("  [API FAIL]   {0} -- folder renamed but Sonarr update failed. Rolling back." -f $title) 'Red'
                     try {
                         Rename-Item -LiteralPath $newPath -NewName $folderName -ErrorAction Stop
@@ -729,8 +792,8 @@ function Invoke-SonarrRenamer {
                         Write-Log ("               Rollback FAILED. Folder is now at: {0}" -f $newPath) 'Red'
                         Write-Log ("               Manually update the path in Sonarr for this series.") 'Red'
                     }
-                    $failedList.Add(("{0} -- Sonarr API update failed" -f $title))
-                    $counts.Failed++
+                $failedList.Add(("{0} -- Sonarr API update failed" -f $title))
+                $counts.Failed++
                 }
             } catch {
                 Write-Log ("  [ERROR]      {0} -- {1}" -f $title, $_) 'Red'
@@ -740,6 +803,7 @@ function Invoke-SonarrRenamer {
         }
     }
 
+    Clear-Progress
     Write-Log ''
     Write-SectionHeader 'SUMMARY'
     Write-Log ''
@@ -827,8 +891,10 @@ function Invoke-RadarrFolderRenamer {
     Write-Log '    (2) Plex     -- {Movie CleanTitle} ({Release Year}) {imdb-{ImdbId}}'
     Write-Log '                    Example: The Dark Knight (2008) {imdb-tt0468569}'
     Write-Log '    (M) Return to main menu' 'DarkGray'
+    Write-Log '    (Q) Quit FolderBoy'      'DarkGray'
     Write-Log ''
-    do { $formatChoice = Read-Host '  Choice' } until ($formatChoice -in '1','2' -or $formatChoice.ToUpper() -eq 'M')
+    do { $formatChoice = Read-Host '  Choice' } until ($formatChoice -in '1','2' -or $formatChoice.ToUpper() -in 'M','Q')
+    if ($formatChoice.ToUpper() -eq 'Q') { $Script:QuitRequested = $true; return }
     if ($formatChoice.ToUpper() -eq 'M') { return }
     $usePlex = ($formatChoice -eq '2')
 
@@ -863,7 +929,12 @@ function Invoke-RadarrFolderRenamer {
     Write-SectionHeader 'PROCESSING MOVIES'
     Write-Log ''
 
-    foreach ($movie in $allMovies | Sort-Object title) {
+    $sortedMovies = @($allMovies | Sort-Object title)
+    $movieTotal   = $sortedMovies.Count
+    $movieIdx     = 0
+    foreach ($movie in $sortedMovies) {
+        $movieIdx++
+        Write-Progress2 'Processing movies...' $movieIdx $movieTotal $movie.title
         $currentPath = if ($movie.path) { $movie.path.TrimEnd('\').TrimEnd('/') } else { $null }
         $title       = $movie.title
         $year        = $movie.year
@@ -876,6 +947,7 @@ function Invoke-RadarrFolderRenamer {
         $parentDir  = Split-Path $currentPath -Parent
 
         if ($year -eq 0 -or -not $year) {
+            Clear-Progress
             Write-Log ("  [NO YEAR]    {0} -- skipped, no release year in Radarr" -f $title) 'Yellow'
             $noYearList.Add($title)
             $counts.NoYear++
@@ -884,6 +956,7 @@ function Invoke-RadarrFolderRenamer {
 
         if (-not (Test-Path -LiteralPath $currentPath)) {
             if (-not $RadarrConfig.SuppressMissing) {
+                Clear-Progress
                 Write-Log ("  [MISSING]    {0} -- path not found: {1}" -f $title, $currentPath) 'Yellow'
             }
             $counts.PathMissing++
@@ -900,12 +973,14 @@ function Invoke-RadarrFolderRenamer {
         if ($normFolder -eq $normTarget) { $counts.AlreadyCorrect++; continue }
 
         if (-not $LiveRename) {
+            Clear-Progress
             Write-Log ("  [WOULD RENAME]") 'White'
             Write-Log ("      From : {0}" -f $currentPath) 'White'
             Write-Log ("      To   : {0}" -f $newPath) 'Cyan'
             $counts.Renamed++
         } else {
             if ((Test-Path -LiteralPath $newPath) -and ($newPath -ne $currentPath)) {
+                Clear-Progress
                 Write-Log ("  [CONFLICT]   {0} -- target folder already exists." -f $title) 'Red'
                 $failedList.Add(("{0} -- target folder already exists" -f $title))
                 $counts.Failed++
@@ -916,11 +991,13 @@ function Invoke-RadarrFolderRenamer {
                 $movie.path = $newPath
                 $result = Invoke-ArrPut $RadarrConfig "movie/$movieId" $movie
                 if ($result) {
+                    Clear-Progress
                     Write-Log ("  [RENAMED]") 'Green'
                     Write-Log ("      From : {0}" -f $currentPath) 'Green'
                     Write-Log ("      To   : {0}" -f $newPath) 'Green'
                     $counts.Renamed++
                 } else {
+                    Clear-Progress
                     Write-Log ("  [API FAIL]   {0} -- folder renamed but Radarr update failed. Rolling back." -f $title) 'Red'
                     try {
                         Rename-Item -LiteralPath $newPath -NewName $folderName -ErrorAction Stop
@@ -942,6 +1019,7 @@ function Invoke-RadarrFolderRenamer {
 
     Write-Log ''
     Write-SectionHeader 'SUMMARY'
+    Clear-Progress
     Write-Log ''
 
     if ($LiveRename) {
@@ -1033,7 +1111,12 @@ function Invoke-LidarrFolderRenamer {
     Write-SectionHeader 'PROCESSING ARTISTS'
     Write-Log ''
 
-    foreach ($artist in $allArtists | Sort-Object { $_.artistName }) {
+    $sortedArtists = @($allArtists | Sort-Object { $_.artistName })
+    $artistTotal   = $sortedArtists.Count
+    $artistIdx     = 0
+    foreach ($artist in $sortedArtists) {
+        $artistIdx++
+        Write-Progress2 'Processing artists...' $artistIdx $artistTotal $artist.artistName
         $currentPath = if ($artist.path) { $artist.path.TrimEnd('\').TrimEnd('/') } else { $null }
         $artistName  = $artist.artistName
         $artistId    = $artist.id
@@ -1045,6 +1128,7 @@ function Invoke-LidarrFolderRenamer {
 
         if (-not (Test-Path -LiteralPath $currentPath)) {
             if (-not $LidarrConfig.SuppressMissing) {
+                Clear-Progress
                 Write-Log ("  [MISSING]    {0} -- path not found: {1}" -f $artistName, $currentPath) 'Yellow'
             }
             $counts.PathMissing++
@@ -1058,12 +1142,14 @@ function Invoke-LidarrFolderRenamer {
         if ($folderName.TrimEnd('.') -eq $newFolderName) { $counts.AlreadyCorrect++; continue }
 
         if (-not $LiveRename) {
+            Clear-Progress
             Write-Log ("  [WOULD RENAME]") 'White'
             Write-Log ("      From : {0}" -f $currentPath) 'White'
             Write-Log ("      To   : {0}" -f $newPath) 'Cyan'
             $counts.Renamed++
         } else {
             if ((Test-Path -LiteralPath $newPath) -and ($newPath -ne $currentPath)) {
+                Clear-Progress
                 Write-Log ("  [CONFLICT]   {0} -- target folder already exists." -f $artistName) 'Red'
                 $failedList.Add(("{0} -- target folder already exists" -f $artistName))
                 $counts.Failed++
@@ -1074,11 +1160,13 @@ function Invoke-LidarrFolderRenamer {
                 $artist.path = $newPath
                 $result = Invoke-ArrPut $LidarrConfig "artist/$artistId" $artist
                 if ($result) {
+                    Clear-Progress
                     Write-Log ("  [RENAMED]") 'Green'
                     Write-Log ("      From : {0}" -f $currentPath) 'Green'
                     Write-Log ("      To   : {0}" -f $newPath) 'Green'
                     $counts.Renamed++
                 } else {
+                    Clear-Progress
                     Write-Log ("  [API FAIL]   {0} -- folder renamed but Lidarr update failed. Rolling back." -f $artistName) 'Red'
                     try {
                         Rename-Item -LiteralPath $newPath -NewName $folderName -ErrorAction Stop
@@ -1100,6 +1188,7 @@ function Invoke-LidarrFolderRenamer {
 
     Write-Log ''
     Write-SectionHeader 'SUMMARY'
+    Clear-Progress
     Write-Log ''
 
     if ($LiveRename) {
@@ -1173,7 +1262,10 @@ function Invoke-RadarrScan {
         }
         $folders = Get-ChildItem -LiteralPath $rootPath -Directory -ErrorAction SilentlyContinue
         Write-Log ("  Scanning {0} ({1} folders)" -f $rootPath, $folders.Count) 'White'
+        $orphanRIdx = 0
         foreach ($folder in $folders) {
+            $orphanRIdx++
+            Write-Progress2 'Scanning Radarr...' $orphanRIdx $folders.Count $folder.Name
             if ($radarrPaths.ContainsKey((Normalize-Path $folder.FullName))) {
                 $stats.Matched++
             } else {
@@ -1183,6 +1275,7 @@ function Invoke-RadarrScan {
     }
 
     if ($stats.NotInArr.Count) {
+        Clear-Progress
         Write-Log ''
         Write-Log '  [ NOT IN RADARR -- folder path not managed by Radarr ]' 'Red'
         Write-Log '  These folders exist on disk but Radarr has no record of them.' 'DarkGray'
@@ -1239,7 +1332,10 @@ function Invoke-SonarrScan {
         $folders = Get-ChildItem -LiteralPath $rootPath -Directory -ErrorAction SilentlyContinue
         Write-Log ("  Scanning {0} ({1} folders)" -f $rootPath, $folders.Count) 'White'
 
+        $orphanSIdx = 0
         foreach ($folder in $folders) {
+            $orphanSIdx++
+            Write-Progress2 'Scanning Sonarr...' $orphanSIdx $folders.Count $folder.Name
             $imdbId = if ($folder.Name -match '\{imdb-(tt\d+)\}') { $Matches[1] } else { $null }
             $tvdbId = if ($folder.Name -match '\{tvdb-(\d+)\}')   { $Matches[1] } else { $null }
 
@@ -1267,6 +1363,7 @@ function Invoke-SonarrScan {
     }
 
     if ($stats.NotInArr.Count) {
+        Clear-Progress
         Write-Log ''
         Write-Log '  [ NOT IN SONARR -- ID tag present but not found in Sonarr library ]' 'Red'
         Write-Log '  High confidence orphans. ID tag exists but Sonarr has no matching series.' 'DarkGray'
@@ -1347,7 +1444,10 @@ function Invoke-LidarrScan {
         $folders = Get-ChildItem -LiteralPath $rootPath -Directory -ErrorAction SilentlyContinue
         Write-Log ("  Scanning {0} ({1} artist folders)" -f $rootPath, $folders.Count) 'White'
 
+        $orphanLIdx = 0
         foreach ($folder in $folders) {
+            $orphanLIdx++
+            Write-Progress2 'Scanning Lidarr...' $orphanLIdx $folders.Count $folder.Name
             $normName = Normalize $folder.Name
             if ($artistLookup.ContainsKey($normName)) {
                 $stats.Matched++
@@ -1368,6 +1468,7 @@ function Invoke-LidarrScan {
     }
 
     if ($stats.NotInArr.Count) {
+        Clear-Progress
         Write-Log ''
         Write-Log '  [ NOT IN LIDARR -- artist folder not managed by Lidarr ]' 'Red'
         foreach ($item in $stats.NotInArr | Sort-Object { $_.Path }) {
@@ -1720,7 +1821,10 @@ function Get-RadarrDashboard ([string[]]$Paths, [bool]$FullScan) {
             $totalFolders += $folders.Count
             Write-Log ("    Scanning {0} ({1} folders)..." -f $root, $folders.Count) 'DarkGray'
 
+            $dashRIdx = 0
             foreach ($folder in $folders) {
+                $dashRIdx++
+                Write-Progress2 'Scanning movies...' $dashRIdx $folders.Count $folder.Name
                 $files       = Get-ChildItem -LiteralPath $folder.FullName -Recurse -File -ErrorAction SilentlyContinue
                 $folderBytes = [long]($files | Measure-Object -Property Length -Sum).Sum
                 $totalFsBytes += $folderBytes
@@ -1734,6 +1838,7 @@ function Get-RadarrDashboard ([string[]]$Paths, [bool]$FullScan) {
             }
         }
 
+        Clear-Progress
         Write-Log ("    Actual disk usage : {0}  ({1:N0} folders)" -f (Format-Bytes $totalFsBytes), $totalFolders) 'White'
         Write-Log ''
         Write-Log '    File formats:' 'DarkGray'
@@ -1827,7 +1932,10 @@ function Get-SonarrDashboard ([string[]]$Paths, [bool]$FullScan) {
             $totalFolders += $folders.Count
             Write-Log ("    Scanning {0} ({1} series folders)..." -f $root, $folders.Count) 'DarkGray'
 
+            $dashSIdx = 0
             foreach ($folder in $folders) {
+                $dashSIdx++
+                Write-Progress2 'Scanning series...' $dashSIdx $folders.Count $folder.Name
                 $files       = Get-ChildItem -LiteralPath $folder.FullName -Recurse -File -ErrorAction SilentlyContinue
                 $folderBytes = [long]($files | Measure-Object -Property Length -Sum).Sum
                 $totalFsBytes += $folderBytes
@@ -1841,6 +1949,7 @@ function Get-SonarrDashboard ([string[]]$Paths, [bool]$FullScan) {
             }
         }
 
+        Clear-Progress
         Write-Log ("    Actual disk usage : {0}  ({1:N0} folders)" -f (Format-Bytes $totalFsBytes), $totalFolders) 'White'
         Write-Log ''
         Write-Log '    File formats:' 'DarkGray'
@@ -1902,7 +2011,10 @@ function Get-LidarrDashboard ([string[]]$Paths, [bool]$FullScan) {
             $totalFolders += $folders.Count
             Write-Log ("    Scanning {0} ({1} artist folders)..." -f $root, $folders.Count) 'DarkGray'
 
+            $dashLIdx = 0
             foreach ($folder in $folders) {
+                $dashLIdx++
+                Write-Progress2 'Scanning artists...' $dashLIdx $folders.Count $folder.Name
                 $files       = Get-ChildItem -LiteralPath $folder.FullName -Recurse -File -ErrorAction SilentlyContinue
                 $folderBytes = [long]($files | Measure-Object -Property Length -Sum).Sum
                 $totalFsBytes += $folderBytes
@@ -1916,6 +2028,7 @@ function Get-LidarrDashboard ([string[]]$Paths, [bool]$FullScan) {
             }
         }
 
+        Clear-Progress
         Write-Log ("    Actual disk usage : {0}  ({1:N0} artist folders)" -f (Format-Bytes $totalFsBytes), $totalFolders) 'White'
         Write-Log ''
         Write-Log '    File formats:' 'DarkGray'
@@ -1942,13 +2055,14 @@ function Invoke-MediaDashboard {
     Write-Log ''
 
     $appOptions = @()
-    if ($RadarrConfig.Enabled) { $appOptions += 'Radarr' }
     if ($SonarrConfig.Enabled) { $appOptions += 'Sonarr' }
+    if ($RadarrConfig.Enabled) { $appOptions += 'Radarr' }
     if ($LidarrConfig.Enabled) { $appOptions += 'Lidarr' }
     $appOptions += 'All apps'
 
-    $appChoice   = Select-SubMode 'Select app:' $appOptions
-    if ($appChoice -eq 0) { return }
+    $appChoice   = Select-SubMode 'Select app:' $appOptions -Title 'Media Dashboard'
+    if ($appChoice -eq  0) { return }
+    if ($appChoice -eq -1) { $Script:QuitRequested = $true; return }
     $selectedApp = $appOptions[$appChoice - 1]
 
     $selectedPaths = $null
@@ -1960,8 +2074,9 @@ function Invoke-MediaDashboard {
         }
         if ($cfg.Paths.Count -gt 1) {
             $pathOptions = @($cfg.Paths) + 'All paths'
-            $pathChoice  = Select-SubMode ("Select path for {0}:" -f $selectedApp) $pathOptions
-            if ($pathChoice -eq 0) { return }
+            $pathChoice  = Select-SubMode ("Select path for {0}:" -f $selectedApp) $pathOptions -Title ('Media Dashboard  >  {0}' -f $selectedApp)
+            if ($pathChoice -eq  0) { return }
+            if ($pathChoice -eq -1) { $Script:QuitRequested = $true; return }
             if ($pathChoice -lt $pathOptions.Count) {
                 $selectedPaths = @($cfg.Paths[$pathChoice - 1])
             }
@@ -1971,8 +2086,9 @@ function Invoke-MediaDashboard {
     $modeChoice = Select-SubMode 'Select mode:' @(
         'Quick -- API data only (fast)'
         'Full  -- API + filesystem scan (slower, more detail)'
-    )
-    if ($modeChoice -eq 0) { return }
+    ) -Title ('Media Dashboard  >  {0}' -f $selectedApp)
+    if ($modeChoice -eq  0) { return }
+    if ($modeChoice -eq -1) { $Script:QuitRequested = $true; return }
     $fullScan  = ($modeChoice -eq 2)
     $modeLabel = if ($fullScan) { 'Full' } else { 'Quick' }
 
@@ -1987,14 +2103,563 @@ function Invoke-MediaDashboard {
         'Sonarr'   { Get-SonarrDashboard $selectedPaths $fullScan }
         'Lidarr'   { Get-LidarrDashboard $selectedPaths $fullScan }
         'All apps' {
-            if ($RadarrConfig.Enabled) { Get-RadarrDashboard $null $fullScan }
             if ($SonarrConfig.Enabled) { Get-SonarrDashboard $null $fullScan }
+            if ($RadarrConfig.Enabled) { Get-RadarrDashboard $null $fullScan }
             if ($LidarrConfig.Enabled) { Get-LidarrDashboard $null $fullScan }
         }
     }
 
     Write-Log ''
     Write-Log ("  Dashboard report saved to: {0}" -f $Script:LogFile) 'Cyan'
+}
+
+function Invoke-MediaDashboardDirect {
+    # Unattended entry point for Full Run -- skips interactive menus
+    param([bool]$FullScan = $false)
+
+    Start-Log 'FolderBoy_Dashboard'
+
+    Write-Log ''
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log '   FolderBoy  |  Media Dashboard' 'Cyan'
+    Write-Log ('   {0}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) 'Cyan'
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log ''
+    Write-Log ("  App: All apps   |   Mode: {0}" -f $(if ($FullScan) { 'Full' } else { 'Quick' })) 'White'
+    if ($FullScan) {
+        Write-Log '  Full mode scans the filesystem -- this may take several minutes on large libraries.' 'DarkGray'
+    }
+    Write-Log ''
+
+    if ($SonarrConfig.Enabled) { Get-SonarrDashboard $null $FullScan }
+    if ($RadarrConfig.Enabled) { Get-RadarrDashboard $null $FullScan }
+    if ($LidarrConfig.Enabled) { Get-LidarrDashboard $null $FullScan }
+
+    Write-Log ''
+    Write-Log ("  Dashboard report saved to: {0}" -f $Script:LogFile) 'Cyan'
+}
+
+# ================================================================
+#  TOOL 8: MEDIA FILE RENAMER
+# ================================================================
+function Invoke-SonarrFileRenamer {
+    param([bool]$LiveRename = $false, [bool]$SharedLog = $false)
+
+    if (-not $SharedLog) { Start-Log 'FolderBoy_FileRenamer' }
+    Write-Log ''
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log '   Sonarr File Renamer' 'Cyan'
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log ''
+    Write-Tip 'Sonarr renames files using its configured Episode Naming format.'
+    Write-Tip 'Set in Sonarr: Settings > Media Management > Episode Naming'
+    Write-Tip 'Guide: https://trash-guides.info/Sonarr/Sonarr-recommended-naming-scheme/'
+    Write-Log ''
+
+    Write-Log '  Fetching Sonarr library...' 'White'
+    $allSeries = Invoke-ArrGet $SonarrConfig 'series'
+    if (-not $allSeries) {
+        Write-Log '  Could not reach Sonarr API. Check BaseUrl and ApiKey in FolderBoy.config.ps1.' 'Red'
+        return
+    }
+    Write-Log ("  Found {0} series in Sonarr." -f $allSeries.Count) 'White'
+
+    # Scope selection: all series, or pick one
+    Write-Log ''
+    Write-Log '  Select scope:' 'Cyan'
+    Write-Log '    (1) All series'
+    Write-Log '    (2) Single series -- pick from list'
+    Write-Log '    (M) Return to main menu' 'DarkGray'
+    Write-Log '    (Q) Quit FolderBoy'      'DarkGray'
+    Write-Log ''
+    do { $scopeChoice = Read-Host '  Choice' } until ($scopeChoice -in '1','2' -or $scopeChoice.ToUpper() -in 'M','Q')
+    if ($scopeChoice.ToUpper() -eq 'Q') { $Script:QuitRequested = $true; return }
+    if ($scopeChoice.ToUpper() -eq 'M') { return }
+
+    $targetSeries = @()
+    if ($scopeChoice -eq '2') {
+        Write-Log ''
+        Write-Log '  Series list (type a number):' 'Cyan'
+        $sortedSeries = @($allSeries | Sort-Object title)
+        for ($i = 0; $i -lt $sortedSeries.Count; $i++) {
+            Write-Log ("    ({0,4}) {1}" -f ($i + 1), $sortedSeries[$i].title) 'White'
+        }
+        Write-Log ''
+        do {
+            $seriesChoice = Read-Host '  Series number'
+            $idx = 0
+            $valid = [int]::TryParse($seriesChoice, [ref]$idx) -and $idx -ge 1 -and $idx -le $sortedSeries.Count
+        } until ($valid)
+        $targetSeries = @($sortedSeries[$idx - 1])
+    } else {
+        $targetSeries = @($allSeries | Sort-Object title)
+    }
+
+    # Preview phase: collect all renames across target series
+    Write-Log ''
+    Write-Log '  Checking for files that need renaming...' 'White'
+    Write-Log ''
+
+    $allRenames   = [System.Collections.Generic.List[hashtable]]::new()
+    $checkedCount = 0
+    $seriesCheckTotal = $targetSeries.Count
+
+    foreach ($s in $targetSeries) {
+        $checkedCount++
+        Write-Progress2 'Checking series...' $checkedCount $seriesCheckTotal $s.title
+        $renames = Invoke-ArrGet $SonarrConfig "rename?seriesId=$($s.id)"
+        if ($renames -and $renames.Count -gt 0) {
+            foreach ($r in $renames) {
+                $allRenames.Add(@{
+                    SeriesTitle     = $s.title
+                    SeriesId        = $s.id
+                    EpisodeFileId   = $r.episodeFileId
+                    EpisodeNumbers  = $r.episodeNumbers
+                    SeasonNumber    = $r.seasonNumber
+                    ExistingPath    = $r.existingPath
+                    NewPath         = $r.newPath
+                })
+            }
+        }
+    }
+
+    Clear-Progress
+    if ($allRenames.Count -eq 0) {
+        Write-Log '  All episode files already match the configured naming scheme.' 'Green'
+        Write-Log ("  Checked {0} series -- nothing to rename." -f $checkedCount) 'Green'
+        return
+    }
+
+    Write-SectionHeader 'FILES THAT NEED RENAMING'
+    Write-Log ''
+
+    $lastSeries = ''
+    foreach ($r in $allRenames) {
+        if ($r.SeriesTitle -ne $lastSeries) {
+            Write-Log ("  -- {0}" -f $r.SeriesTitle) 'Yellow'
+            $lastSeries = $r.SeriesTitle
+        }
+        Write-Log ("    From : {0}" -f $r.ExistingPath) 'White'
+        Write-Log ("    To   : {0}" -f $r.NewPath) 'Cyan'
+    }
+
+    # Per-series summary table
+    Write-Log ''
+    Write-Log '  Summary by series:' 'DarkGray'
+    Write-Log ('  {0,-55} {1,6}' -f 'Series', 'Files') 'DarkGray'
+    Write-Log ('  ' + ('-' * 63)) 'DarkGray'
+    $allRenames | Group-Object { $_.SeriesId } | Sort-Object { $_.Group[0].SeriesTitle } | ForEach-Object {
+        Write-Log ('  {0,-55} {1,6}' -f $_.Group[0].SeriesTitle, $_.Count) 'DarkGray'
+    }
+    Write-Log ''
+    Write-Log ("  Files to rename : {0}" -f $allRenames.Count) 'Cyan'
+    Write-Log ("  Across          : {0} series" -f ($allRenames | ForEach-Object { $_.SeriesTitle } | Select-Object -Unique).Count) 'Cyan'
+
+    if (-not $LiveRename) {
+        Write-Log ''
+        Write-Log '  DRY RUN -- no files were renamed.' 'Cyan'
+        Write-Log '  Re-run and choose Live Rename to apply these changes.' 'Cyan'
+        return
+    }
+
+    Write-Log ''
+    if (-not (Confirm-LiveAction ("This will rename {0} episode file(s) via Sonarr. Sonarr performs all renaming." -f $allRenames.Count))) { return }
+
+    # Group by series and fire one rename command per series
+    Write-Log ''
+    Write-SectionHeader 'RENAMING'
+    Write-Log ''
+
+    $seriesGroups = $allRenames | Group-Object { $_.SeriesId }
+    $totalRenamed = 0
+    $totalFailed  = 0
+
+    foreach ($group in $seriesGroups) {
+        $seriesTitle = $group.Group[0].SeriesTitle
+        $fileIds     = @($group.Group | ForEach-Object { $_.EpisodeFileId })
+
+        $cmd = @{
+            name     = 'RenameFiles'
+            seriesId = [int]$group.Name
+            files    = $fileIds
+        }
+        $result = Invoke-ArrPost $SonarrConfig 'command' $cmd
+
+        if ($result -and $result.id) {
+            Write-Log ("  [QUEUED]  {0}  ({1} file(s)  --  command id {2})" -f $seriesTitle, $fileIds.Count, $result.id) 'Green'
+            $totalRenamed += $fileIds.Count
+        } else {
+            Write-Log ("  [FAILED]  {0} -- command not accepted by Sonarr" -f $seriesTitle) 'Red'
+            $totalFailed += $fileIds.Count
+        }
+    }
+
+    Write-Log ''
+    Write-Log ("  Rename commands sent : {0,4} files queued" -f $totalRenamed) 'Green'
+    Write-Log ("  Failed to queue      : {0,4} files" -f $totalFailed) $(if ($totalFailed) { 'Red' } else { 'Green' })
+    Write-Log ''
+    Write-Tip 'Sonarr processes rename commands in the background. Check Activity > Queue in Sonarr to monitor progress.'
+}
+
+function Invoke-RadarrFileRenamer {
+    param([bool]$LiveRename = $false, [bool]$SharedLog = $false)
+
+    if (-not $SharedLog) { Start-Log 'FolderBoy_FileRenamer' }
+    Write-Log ''
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log '   Radarr File Renamer' 'Cyan'
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log ''
+    Write-Tip 'Radarr renames files using its configured Movie Naming format.'
+    Write-Tip 'Set in Radarr: Settings > Media Management > Movie Naming'
+    Write-Tip 'Guide: https://trash-guides.info/Radarr/Radarr-recommended-naming-scheme/'
+    Write-Log ''
+
+    Write-Log '  Fetching Radarr library...' 'White'
+    $allMovies = Invoke-ArrGet $RadarrConfig 'movie'
+    if (-not $allMovies) {
+        Write-Log '  Could not reach Radarr API. Check BaseUrl and ApiKey in FolderBoy.config.ps1.' 'Red'
+        return
+    }
+    $moviesWithFiles = @($allMovies | Where-Object { $_.hasFile })
+    Write-Log ("  Found {0} movies in Radarr ({1} with files on disk)." -f $allMovies.Count, $moviesWithFiles.Count) 'White'
+
+    # Scope selection
+    Write-Log ''
+    Write-Log '  Select scope:' 'Cyan'
+    Write-Log '    (1) All movies'
+    Write-Log '    (2) Single movie -- pick from list'
+    Write-Log '    (M) Return to main menu' 'DarkGray'
+    Write-Log '    (Q) Quit FolderBoy'      'DarkGray'
+    Write-Log ''
+    do { $scopeChoice = Read-Host '  Choice' } until ($scopeChoice -in '1','2' -or $scopeChoice.ToUpper() -in 'M','Q')
+    if ($scopeChoice.ToUpper() -eq 'Q') { $Script:QuitRequested = $true; return }
+    if ($scopeChoice.ToUpper() -eq 'M') { return }
+
+    $targetMovies = @()
+    if ($scopeChoice -eq '2') {
+        Write-Log ''
+        Write-Log '  Movies with files (type a number):' 'Cyan'
+        $sortedMovies = @($moviesWithFiles | Sort-Object title)
+        for ($i = 0; $i -lt $sortedMovies.Count; $i++) {
+            Write-Log ("    ({0,4}) {1}" -f ($i + 1), $sortedMovies[$i].title) 'White'
+        }
+        Write-Log ''
+        do {
+            $movieChoice = Read-Host '  Movie number'
+            $idx = 0
+            $valid = [int]::TryParse($movieChoice, [ref]$idx) -and $idx -ge 1 -and $idx -le $sortedMovies.Count
+        } until ($valid)
+        $targetMovies = @($sortedMovies[$idx - 1])
+    } else {
+        $targetMovies = $moviesWithFiles
+    }
+
+    # Preview phase
+    Write-Log ''
+    Write-Log '  Checking for files that need renaming...' 'White'
+    Write-Log ''
+
+    $allRenames       = [System.Collections.Generic.List[hashtable]]::new()
+    $movieCheckTotal  = $targetMovies.Count
+    $movieCheckIdx    = 0
+    $sortedTargetMovies = @($targetMovies | Sort-Object title)
+
+    foreach ($m in $sortedTargetMovies) {
+        $movieCheckIdx++
+        Write-Progress2 'Checking movies...' $movieCheckIdx $movieCheckTotal $m.title
+        $renames = Invoke-ArrGet $RadarrConfig "rename?movieId=$($m.id)"
+        if ($renames -and $renames.Count -gt 0) {
+            foreach ($r in $renames) {
+                $allRenames.Add(@{
+                    Title        = $m.title
+                    MovieId      = $m.id
+                    MovieFileId  = $r.movieFileId
+                    ExistingPath = $r.existingPath
+                    NewPath      = $r.newPath
+                })
+            }
+        }
+    }
+
+    Clear-Progress
+    if ($allRenames.Count -eq 0) {
+        Write-Log '  All movie files already match the configured naming scheme.' 'Green'
+        Write-Log ("  Checked {0} movies -- nothing to rename." -f $targetMovies.Count) 'Green'
+        return
+    }
+
+    Write-SectionHeader 'FILES THAT NEED RENAMING'
+    Write-Log ''
+
+    foreach ($r in $allRenames) {
+        Write-Log ("  -- {0}" -f $r.Title) 'Yellow'
+        Write-Log ("    From : {0}" -f $r.ExistingPath) 'White'
+        Write-Log ("    To   : {0}" -f $r.NewPath) 'Cyan'
+    }
+
+    # Per-movie summary table
+    Write-Log ''
+    Write-Log '  Summary by movie:' 'DarkGray'
+    Write-Log ('  {0,-55} {1,6}' -f 'Movie', 'Files') 'DarkGray'
+    Write-Log ('  ' + ('-' * 63)) 'DarkGray'
+    $allRenames | Group-Object { $_.MovieId } | Sort-Object { $_.Group[0].Title } | ForEach-Object {
+        Write-Log ('  {0,-55} {1,6}' -f $_.Group[0].Title, $_.Count) 'DarkGray'
+    }
+    Write-Log ''
+    Write-Log ("  Files to rename : {0}" -f $allRenames.Count) 'Cyan'
+
+    if (-not $LiveRename) {
+        Write-Log ''
+        Write-Log '  DRY RUN -- no files were renamed.' 'Cyan'
+        Write-Log '  Re-run and choose Live Rename to apply these changes.' 'Cyan'
+        return
+    }
+
+    Write-Log ''
+    if (-not (Confirm-LiveAction ("This will rename {0} movie file(s) via Radarr. Radarr performs all renaming." -f $allRenames.Count))) { return }
+
+    # Group by movie and send one command per movie
+    Write-Log ''
+    Write-SectionHeader 'RENAMING'
+    Write-Log ''
+
+    $movieGroups  = $allRenames | Group-Object { $_.MovieId }
+    $totalRenamed = 0
+    $totalFailed  = 0
+
+    foreach ($group in $movieGroups) {
+        $title   = $group.Group[0].Title
+        $fileIds = @($group.Group | ForEach-Object { $_.MovieFileId })
+
+        $cmd = @{
+            name     = 'RenameFiles'
+            movieIds = @([int]$group.Name)
+            files    = $fileIds
+        }
+        $result = Invoke-ArrPost $RadarrConfig 'command' $cmd
+
+        if ($result -and $result.id) {
+            Write-Log ("  [QUEUED]  {0}  ({1} file(s)  --  command id {2})" -f $title, $fileIds.Count, $result.id) 'Green'
+            $totalRenamed += $fileIds.Count
+        } else {
+            Write-Log ("  [FAILED]  {0} -- command not accepted by Radarr" -f $title) 'Red'
+            $totalFailed += $fileIds.Count
+        }
+    }
+
+    Write-Log ''
+    Write-Log ("  Rename commands sent : {0,4} files queued" -f $totalRenamed) 'Green'
+    Write-Log ("  Failed to queue      : {0,4} files" -f $totalFailed) $(if ($totalFailed) { 'Red' } else { 'Green' })
+    Write-Log ''
+    Write-Tip 'Radarr processes rename commands in the background. Check Activity > Queue in Radarr to monitor progress.'
+}
+
+function Invoke-LidarrFileRenamer {
+    param([bool]$LiveRename = $false, [bool]$SharedLog = $false)
+
+    if (-not $SharedLog) { Start-Log 'FolderBoy_FileRenamer' }
+    Write-Log ''
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log '   Lidarr File Renamer' 'Cyan'
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log ''
+    Write-Tip 'Lidarr renames files using its configured Track Naming format.'
+    Write-Tip 'Set in Lidarr: Settings > Media Management > Track Naming'
+    Write-Tip 'Guide: https://wiki.servarr.com/lidarr/naming-guide'
+    Write-Log ''
+
+    Write-Log '  Fetching Lidarr library...' 'White'
+    $allArtists = Invoke-ArrGet $LidarrConfig 'artist'
+    if (-not $allArtists) {
+        Write-Log '  Could not reach Lidarr API. Check BaseUrl and ApiKey in FolderBoy.config.ps1.' 'Red'
+        return
+    }
+    Write-Log ("  Found {0} artists in Lidarr." -f $allArtists.Count) 'White'
+
+    # Scope selection
+    Write-Log ''
+    Write-Log '  Select scope:' 'Cyan'
+    Write-Log '    (1) All artists'
+    Write-Log '    (2) Single artist -- pick from list'
+    Write-Log '    (M) Return to main menu' 'DarkGray'
+    Write-Log '    (Q) Quit FolderBoy'      'DarkGray'
+    Write-Log ''
+    do { $scopeChoice = Read-Host '  Choice' } until ($scopeChoice -in '1','2' -or $scopeChoice.ToUpper() -in 'M','Q')
+    if ($scopeChoice.ToUpper() -eq 'Q') { $Script:QuitRequested = $true; return }
+    if ($scopeChoice.ToUpper() -eq 'M') { return }
+
+    $targetArtists = @()
+    if ($scopeChoice -eq '2') {
+        Write-Log ''
+        Write-Log '  Artist list (type a number):' 'Cyan'
+        $sortedArtists = @($allArtists | Sort-Object { $_.artistName })
+        for ($i = 0; $i -lt $sortedArtists.Count; $i++) {
+            Write-Log ("    ({0,4}) {1}" -f ($i + 1), $sortedArtists[$i].artistName) 'White'
+        }
+        Write-Log ''
+        do {
+            $artistChoice = Read-Host '  Artist number'
+            $idx = 0
+            $valid = [int]::TryParse($artistChoice, [ref]$idx) -and $idx -ge 1 -and $idx -le $sortedArtists.Count
+        } until ($valid)
+        $targetArtists = @($sortedArtists[$idx - 1])
+    } else {
+        $targetArtists = @($allArtists | Sort-Object { $_.artistName })
+    }
+
+    # Preview phase
+    Write-Log ''
+    Write-Log '  Checking for files that need renaming...' 'White'
+    Write-Log ''
+
+    $allRenames        = [System.Collections.Generic.List[hashtable]]::new()
+    $artistCheckTotal  = $targetArtists.Count
+    $artistCheckIdx    = 0
+
+    foreach ($a in $targetArtists) {
+        $artistCheckIdx++
+        Write-Progress2 'Checking artists...' $artistCheckIdx $artistCheckTotal $a.artistName
+        $renames = Invoke-ArrGet $LidarrConfig "rename?artistId=$($a.id)"
+        if ($renames -and $renames.Count -gt 0) {
+            foreach ($r in $renames) {
+                $allRenames.Add(@{
+                    ArtistName   = $a.artistName
+                    ArtistId     = $a.id
+                    TrackFileId  = $r.trackFileId
+                    ExistingPath = $r.existingPath
+                    NewPath      = $r.newPath
+                })
+            }
+        }
+    }
+
+    Clear-Progress
+    if ($allRenames.Count -eq 0) {
+        Write-Log '  All track files already match the configured naming scheme.' 'Green'
+        Write-Log ("  Checked {0} artists -- nothing to rename." -f $targetArtists.Count) 'Green'
+        return
+    }
+
+    Write-SectionHeader 'FILES THAT NEED RENAMING'
+    Write-Log ''
+
+    $lastArtist = ''
+    foreach ($r in $allRenames) {
+        if ($r.ArtistName -ne $lastArtist) {
+            Write-Log ("  -- {0}" -f $r.ArtistName) 'Yellow'
+            $lastArtist = $r.ArtistName
+        }
+        Write-Log ("    From : {0}" -f $r.ExistingPath) 'White'
+        Write-Log ("    To   : {0}" -f $r.NewPath) 'Cyan'
+    }
+
+    # Per-artist summary table
+    Write-Log ''
+    Write-Log '  Summary by artist:' 'DarkGray'
+    Write-Log ('  {0,-55} {1,6}' -f 'Artist', 'Files') 'DarkGray'
+    Write-Log ('  ' + ('-' * 63)) 'DarkGray'
+    $allRenames | Group-Object { $_.ArtistId } | Sort-Object { $_.Group[0].ArtistName } | ForEach-Object {
+        Write-Log ('  {0,-55} {1,6}' -f $_.Group[0].ArtistName, $_.Count) 'DarkGray'
+    }
+    Write-Log ''
+    Write-Log ("  Files to rename : {0}" -f $allRenames.Count) 'Cyan'
+    Write-Log ("  Across          : {0} artists" -f ($allRenames | ForEach-Object { $_.ArtistName } | Select-Object -Unique).Count) 'Cyan'
+
+    if (-not $LiveRename) {
+        Write-Log ''
+        Write-Log '  DRY RUN -- no files were renamed.' 'Cyan'
+        Write-Log '  Re-run and choose Live Rename to apply these changes.' 'Cyan'
+        return
+    }
+
+    Write-Log ''
+    if (-not (Confirm-LiveAction ("This will rename {0} track file(s) via Lidarr. Lidarr performs all renaming." -f $allRenames.Count))) { return }
+
+    # Group by artist and send one command per artist
+    Write-Log ''
+    Write-SectionHeader 'RENAMING'
+    Write-Log ''
+
+    $artistGroups = $allRenames | Group-Object { $_.ArtistId }
+    $totalRenamed = 0
+    $totalFailed  = 0
+
+    foreach ($group in $artistGroups) {
+        $artistName = $group.Group[0].ArtistName
+        $fileIds    = @($group.Group | ForEach-Object { $_.TrackFileId })
+
+        $cmd = @{
+            name      = 'RenameArtist'
+            artistIds = @([int]$group.Name)
+        }
+        $result = Invoke-ArrPost $LidarrConfig 'command' $cmd
+
+        if ($result -and $result.id) {
+            Write-Log ("  [QUEUED]  {0}  ({1} file(s)  --  command id {2})" -f $artistName, $fileIds.Count, $result.id) 'Green'
+            $totalRenamed += $fileIds.Count
+        } else {
+            Write-Log ("  [FAILED]  {0} -- command not accepted by Lidarr" -f $artistName) 'Red'
+            $totalFailed += $fileIds.Count
+        }
+    }
+
+    Write-Log ''
+    Write-Log ("  Rename commands sent : {0,4} artists queued" -f $totalRenamed) 'Green'
+    Write-Log ("  Failed to queue      : {0,4}" -f $totalFailed) $(if ($totalFailed) { 'Red' } else { 'Green' })
+    Write-Log ''
+    Write-Tip 'Lidarr processes rename commands in the background. Check Activity > Queue in Lidarr to monitor progress.'
+}
+
+function Invoke-MediaFileRenamer {
+    param([bool]$LiveRename = $false)
+
+    Start-Log 'FolderBoy_FileRenamer'
+    $modeLabel = if ($LiveRename) { 'Live Rename' } else { 'Dry Run' }
+
+    Write-Log ''
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log ("   FolderBoy  |  Media File Renamer -- {0}" -f $modeLabel) 'Cyan'
+    Write-Log ('   {0}' -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) 'Cyan'
+    Write-Log '  ============================================================' 'Cyan'
+    Write-Log ''
+
+    if (-not $LiveRename) {
+        Write-Log '  DRY RUN MODE: No files will be renamed.' 'Cyan'
+        Write-Log '  This run previews what each *arr app would rename using its current naming config.' 'Cyan'
+        Write-Log '  Review the output, then re-run and choose Live Rename to apply.' 'Cyan'
+        Write-Log ''
+    }
+
+    Write-Log '  NOTE: The *arr app performs all file renaming.' 'DarkGray'
+    Write-Log '  FolderBoy sends the rename command; each app moves its own files.' 'DarkGray'
+    Write-Log '  File naming format is controlled by each app''s Media Management settings.' 'DarkGray'
+    Write-Log ''
+
+    $appOptions = @()
+    if ($SonarrConfig.Enabled) { $appOptions += 'Sonarr' }
+    if ($RadarrConfig.Enabled) { $appOptions += 'Radarr' }
+    if ($LidarrConfig.Enabled) { $appOptions += 'Lidarr' }
+    $appOptions += 'All apps'
+
+    $appChoice = Select-SubMode 'Select app:' $appOptions -Title 'Media File Renamer'
+    if ($appChoice -eq  0) { return }
+    if ($appChoice -eq -1) { $Script:QuitRequested = $true; return }
+    $selectedApp = $appOptions[$appChoice - 1]
+
+    switch ($selectedApp) {
+        'Sonarr'   { Invoke-SonarrFileRenamer -LiveRename $LiveRename -SharedLog $true }
+        'Radarr'   { Invoke-RadarrFileRenamer  -LiveRename $LiveRename -SharedLog $true }
+        'Lidarr'   { Invoke-LidarrFileRenamer  -LiveRename $LiveRename -SharedLog $true }
+        'All apps' {
+            if ($SonarrConfig.Enabled) { Invoke-SonarrFileRenamer -LiveRename $LiveRename -SharedLog $true }
+            if ($RadarrConfig.Enabled) { Invoke-RadarrFileRenamer  -LiveRename $LiveRename -SharedLog $true }
+            if ($LidarrConfig.Enabled) { Invoke-LidarrFileRenamer  -LiveRename $LiveRename -SharedLog $true }
+        }
+    }
+
+    Write-Log ''
+    Write-Log ("  Log saved to: {0}" -f $Script:LogFile) 'Cyan'
 }
 
 # ================================================================
@@ -2007,21 +2672,23 @@ function Show-MainMenu {
     Write-Host '   FolderBoy  |  Media Library Manager' -ForegroundColor Cyan
     Write-Host '  ============================================================' -ForegroundColor Cyan
     Write-Host ''
-    Write-Host '  (1) FolderBoy Cleaner    -- remove folders with no media files'
+    Write-Host '  (1) FolderBoy Cleaner     -- remove folders with no media files'
     Write-Host '  (2) Sonarr Folder Renamer -- rename series folders to standard format'
     Write-Host '  (3) Radarr Folder Renamer -- rename movie folders to standard format'
     Write-Host '  (4) Lidarr Folder Renamer -- rename artist folders to standard format'
-    Write-Host '  (5) Orphan Scanner       -- find media not managed by any *arr app'
-    Write-Host '  (6) Full Run             -- all Renamers then Scanner (recommended workflow)'
-    Write-Host '  (7) Media Dashboard      -- library statistics and disk usage report'
-    Write-Host '  (8) Exit'
+    Write-Host '  (5) Orphan Scanner        -- find media not managed by any *arr app'
+    Write-Host '  (6) Full Run              -- run all 8 tools in sequence (attended or unattended)'
+    Write-Host '  (7) Media Dashboard       -- library statistics and disk usage report'
+    Write-Host '  (8) Media File Renamer    -- rename media files to match *arr naming scheme'
+    Write-Host '  (M) Return to this menu   -- (use from any sub-menu)'   -ForegroundColor DarkGray
+    Write-Host '  (Q) Quit FolderBoy'                                     -ForegroundColor DarkGray
     Write-Host ''
 
     if ($Script:DashboardCache) {
         Write-Host '  Library Health:' -ForegroundColor DarkGray
         $appDefs = @(
-            @{ Name = 'Radarr'; Key = 'Radarr'; Label = 'movies'  }
             @{ Name = 'Sonarr'; Key = 'Sonarr'; Label = 'series'  }
+            @{ Name = 'Radarr'; Key = 'Radarr'; Label = 'movies'  }
             @{ Name = 'Lidarr'; Key = 'Lidarr'; Label = 'artists' }
         )
         foreach ($app in $appDefs) {
@@ -2056,18 +2723,25 @@ function Show-MainMenu {
     }
 }
 
-function Select-SubMode ([string]$Prompt, [string[]]$Options) {
+function Select-SubMode ([string]$Prompt, [string[]]$Options, [string]$Title = '') {
     Write-Host ''
-    Write-Host ("  {0}" -f $Prompt) -ForegroundColor Cyan
+    if ($Title) {
+        Write-Host ("  {0}" -f $Title) -ForegroundColor White
+        Write-Host ("  {0}" -f $Prompt) -ForegroundColor Cyan
+    } else {
+        Write-Host ("  {0}" -f $Prompt) -ForegroundColor Cyan
+    }
     Write-Host ''
     for ($i = 0; $i -lt $Options.Count; $i++) {
         Write-Host ("    ({0}) {1}" -f ($i + 1), $Options[$i])
     }
     Write-Host '    (M) Return to main menu' -ForegroundColor DarkGray
+    Write-Host '    (Q) Quit FolderBoy'      -ForegroundColor DarkGray
     Write-Host ''
     do {
         $c = Read-Host '  Choice'
-        if ($c.ToUpper() -eq 'M') { return 0 }
+        if ($c.ToUpper() -eq 'M') { return 0  }
+        if ($c.ToUpper() -eq 'Q') { return -1 }
         $idx = 0
         $valid = [int]::TryParse($c, [ref]$idx) -and $idx -ge 1 -and $idx -le $Options.Count
     } until ($valid)
@@ -2077,26 +2751,44 @@ function Select-SubMode ([string]$Prompt, [string[]]$Options) {
 # ================================================================
 #  ENTRY POINT
 # ================================================================
-$SessionLog = [System.Collections.Generic.List[string]]::new()
-$Script:ReturnedToMenu = $false
+$SessionLog              = [System.Collections.Generic.List[string]]::new()
+$Script:ReturnedToMenu   = $false
+$Script:QuitRequested    = $false
+$Script:ToolStartTime    = $null
 
 function Add-SessionEntry ([string]$Entry) {
     $time = Get-Date -Format 'HH:mm'
-    $Script:SessionLog.Add(("[{0}] {1}" -f $time, $Entry))
+    if ($Script:ToolStartTime) {
+        $elapsed = (Get-Date) - $Script:ToolStartTime
+        $elapsedStr = if ($elapsed.TotalMinutes -ge 1) {
+            '{0}m {1}s' -f [int]$elapsed.TotalMinutes, $elapsed.Seconds
+        } else {
+            '{0}s' -f [int]$elapsed.TotalSeconds
+        }
+        $Script:SessionLog.Add(("[{0}] {1}  ({2})" -f $time, $Entry, $elapsedStr))
+    } else {
+        $Script:SessionLog.Add(("[{0}] {1}" -f $time, $Entry))
+    }
+    $Script:ToolStartTime = $null
 }
 
 do {
     Show-MainMenu $SessionLog
-    do { $menuChoice = Read-Host '  Choice' } until ($menuChoice -in '1','2','3','4','5','6','7','8')
+    do { $menuChoice = (Read-Host '  Choice').ToUpper() } until ($menuChoice -in '1','2','3','4','5','6','7','8','M','Q')
+
+    if ($menuChoice -eq 'Q') { $Script:QuitRequested = $true; break }
+    if ($menuChoice -eq 'M') { continue }  # redraw menu
 
     switch ($menuChoice) {
 
         '1' {
-            $mode = Select-SubMode 'FolderBoy Cleaner mode:' @(
+            $Script:ToolStartTime = Get-Date
+            $mode = Select-SubMode 'Select mode:' @(
                 'Dry Run     -- preview which folders would be deleted (safe, no changes)'
                 'Live Delete -- permanently delete folders with no media files'
-            )
-            if ($mode -eq 0) { $Script:ReturnedToMenu = $true; break }
+            ) -Title 'FolderBoy Cleaner'
+            if ($mode -eq  0) { $Script:ReturnedToMenu = $true; break }
+            if ($mode -eq -1) { $Script:QuitRequested  = $true; break }
             $modeStr = if ($mode -eq 2) { 'Live Delete' } else { 'Dry Run' }
             $cleanerResult = Invoke-FolderBoyCleaner -LiveDelete ($mode -eq 2)
             if (-not $cleanerResult) { $Script:ReturnedToMenu = $true; break }
@@ -2107,7 +2799,7 @@ do {
             } else {
                 "{0} paths" -f $cleanerResult.Paths.Count
             }
-            Add-SessionEntry ("FolderBoy Cleaner [{0}] {1} -- {2} -- complete" -f $modeStr, $cleanerResult.Label, $pathSummary)
+            Add-SessionEntry ("FolderBoy Cleaner [{0}] {1} -- {2}" -f $modeStr, $cleanerResult.Label, $pathSummary)
         }
 
         '2' {
@@ -2116,14 +2808,16 @@ do {
                 Write-Host '  Sonarr is disabled in FolderBoy.config.ps1.' -ForegroundColor Yellow
                 Write-Host '  Set Enabled = $true in $SonarrConfig to use this tool.' -ForegroundColor Yellow
             } else {
-                $mode = Select-SubMode 'Sonarr Folder Renamer mode:' @(
+                $Script:ToolStartTime = Get-Date
+                $mode = Select-SubMode 'Select mode:' @(
                     'Dry Run     -- preview which folders would be renamed (safe, no changes)'
                     'Live Rename -- rename folders on disk and update Sonarr paths via API'
-                )
-                if ($mode -eq 0) { $Script:ReturnedToMenu = $true; break }
+                ) -Title 'Sonarr Folder Renamer'
+                if ($mode -eq  0) { $Script:ReturnedToMenu = $true; break }
+                if ($mode -eq -1) { $Script:QuitRequested  = $true; break }
                 $modeStr = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-SonarrRenamer -LiveRename ($mode -eq 2)
-                Add-SessionEntry ("Sonarr Folder Renamer [{0}] -- complete" -f $modeStr)
+                Add-SessionEntry ("Sonarr Folder Renamer [{0}]" -f $modeStr)
             }
         }
 
@@ -2133,14 +2827,16 @@ do {
                 Write-Host '  Radarr is disabled in FolderBoy.config.ps1.' -ForegroundColor Yellow
                 Write-Host '  Set Enabled = $true in $RadarrConfig to use this tool.' -ForegroundColor Yellow
             } else {
-                $mode = Select-SubMode 'Radarr Folder Renamer mode:' @(
+                $Script:ToolStartTime = Get-Date
+                $mode = Select-SubMode 'Select mode:' @(
                     'Dry Run     -- preview which folders would be renamed (safe, no changes)'
                     'Live Rename -- rename folders on disk and update Radarr paths via API'
-                )
-                if ($mode -eq 0) { $Script:ReturnedToMenu = $true; break }
+                ) -Title 'Radarr Folder Renamer'
+                if ($mode -eq  0) { $Script:ReturnedToMenu = $true; break }
+                if ($mode -eq -1) { $Script:QuitRequested  = $true; break }
                 $modeStr = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-RadarrFolderRenamer -LiveRename ($mode -eq 2)
-                Add-SessionEntry ("Radarr Folder Renamer [{0}] -- complete" -f $modeStr)
+                Add-SessionEntry ("Radarr Folder Renamer [{0}]" -f $modeStr)
             }
         }
 
@@ -2150,113 +2846,257 @@ do {
                 Write-Host '  Lidarr is disabled in FolderBoy.config.ps1.' -ForegroundColor Yellow
                 Write-Host '  Set Enabled = $true in $LidarrConfig to use this tool.' -ForegroundColor Yellow
             } else {
-                $mode = Select-SubMode 'Lidarr Folder Renamer mode:' @(
+                $Script:ToolStartTime = Get-Date
+                $mode = Select-SubMode 'Select mode:' @(
                     'Dry Run     -- preview which folders would be renamed (safe, no changes)'
                     'Live Rename -- rename folders on disk and update Lidarr paths via API'
-                )
-                if ($mode -eq 0) { $Script:ReturnedToMenu = $true; break }
+                ) -Title 'Lidarr Folder Renamer'
+                if ($mode -eq  0) { $Script:ReturnedToMenu = $true; break }
+                if ($mode -eq -1) { $Script:QuitRequested  = $true; break }
                 $modeStr = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
                 Invoke-LidarrFolderRenamer -LiveRename ($mode -eq 2)
-                Add-SessionEntry ("Lidarr Folder Renamer [{0}] -- complete" -f $modeStr)
+                Add-SessionEntry ("Lidarr Folder Renamer [{0}]" -f $modeStr)
             }
         }
 
         '5' {
-            $scope = Select-SubMode 'Orphan Scanner scope:' @(
-                'All libraries -- scan Radarr, Sonarr, and Lidarr'
-                'Radarr only'
+            $Script:ToolStartTime = Get-Date
+            $scope = Select-SubMode 'Select scope:' @(
+                'All libraries -- scan Sonarr, Radarr, and Lidarr'
                 'Sonarr only'
+                'Radarr only'
                 'Lidarr only'
-            )
-            if ($scope -eq 0) { $Script:ReturnedToMenu = $true; break }
+            ) -Title 'Orphan Scanner'
+            if ($scope -eq  0) { $Script:ReturnedToMenu = $true; break }
+            if ($scope -eq -1) { $Script:QuitRequested  = $true; break }
             $scopeStr = switch ($scope) {
                 1 { 'All' }
-                2 { 'Radarr' }
-                3 { 'Sonarr' }
+                2 { 'Sonarr' }
+                3 { 'Radarr' }
                 4 { 'Lidarr' }
             }
-            $mode = Select-SubMode 'Orphan Scanner mode:' @(
+            $mode = Select-SubMode 'Select mode:' @(
                 'Scan Only     -- report orphaned folders (safe, no changes)'
                 'Scan + Delete -- report then interactively select folders to delete'
-            )
-            if ($mode -eq 0) { $Script:ReturnedToMenu = $true; break }
+            ) -Title ('Orphan Scanner  [{0}]' -f $scopeStr)
+            if ($mode -eq  0) { $Script:ReturnedToMenu = $true; break }
+            if ($mode -eq -1) { $Script:QuitRequested  = $true; break }
             $modeStr = if ($mode -eq 2) { 'Scan + Delete' } else { 'Scan Only' }
             Invoke-OrphanScanner -WithDelete ($mode -eq 2) -Scope $scopeStr
-            Add-SessionEntry ("Orphan Scanner [{0}] [{1}] -- complete" -f $modeStr, $scopeStr)
+            Add-SessionEntry ("Orphan Scanner [{0}] [{1}]" -f $modeStr, $scopeStr)
         }
 
         '6' {
+            # ----------------------------------------------------------------
+            #  FULL RUN -- all 8 tools in sequence
+            # ----------------------------------------------------------------
             Write-Host ''
-            Write-Host '  Full Run: all Folder Renamers then Orphan Scanner.' -ForegroundColor Cyan
-            Write-Host '  Running the renamers first maximizes ID tag coverage,' -ForegroundColor DarkGray
-            Write-Host '  giving the scanner higher-confidence matches.' -ForegroundColor DarkGray
+            Write-Host '  ============================================================' -ForegroundColor Cyan
+            Write-Host '   Full Run  |  All FolderBoy Tools' -ForegroundColor Cyan
+            Write-Host '  ============================================================' -ForegroundColor Cyan
+            Write-Host ''
+            Write-Host '  Full Run executes all tools in sequence:' -ForegroundColor White
+            Write-Host '    1. Sonarr Folder Renamer    5. Sonarr File Renamer' -ForegroundColor DarkGray
+            Write-Host '    2. Radarr Folder Renamer    6. Radarr File Renamer' -ForegroundColor DarkGray
+            Write-Host '    3. Lidarr Folder Renamer    7. Lidarr File Renamer' -ForegroundColor DarkGray
+            Write-Host '    4. Orphan Scanner           8. Media Dashboard' -ForegroundColor DarkGray
+            Write-Host ''
 
-            if ($SonarrConfig.Enabled) {
-                $sonarrMode = Select-SubMode 'Sonarr Folder Renamer mode:' @(
+            $frMode = Select-SubMode 'Select run mode:' @(
+                'Attended  -- choose Dry Run or Live for each tool as it starts (safest)'
+                'Dry Run All  -- run every tool in Dry Run mode without further prompts'
+                'Live All  -- run every tool in Live mode without further prompts (DANGEROUS)'
+            ) -Title 'Full Run'
+            if ($frMode -eq  0) { $Script:ReturnedToMenu = $true; break }
+            if ($frMode -eq -1) { $Script:QuitRequested  = $true; break }
+
+            # Unattended Live warning
+            if ($frMode -eq 3) {
+                Write-Host ''
+                Write-Host '  *** LIVE ALL WARNING ***' -ForegroundColor Red
+                Write-Host '  This will apply ALL changes without any further confirmation:' -ForegroundColor Red
+                Write-Host '    - Rename series, movie, and artist folders on disk' -ForegroundColor Yellow
+                Write-Host '    - Update paths in Sonarr, Radarr, and Lidarr via API' -ForegroundColor Yellow
+                Write-Host '    - Rename individual media files via each app' -ForegroundColor Yellow
+                Write-Host '    - Orphan Scanner will ONLY scan, not delete (requires interactive confirm)' -ForegroundColor Yellow
+                Write-Host '    - Dashboard will run in Full mode (filesystem scan)' -ForegroundColor Yellow
+                Write-Host ''
+                Write-Host '  Folder Renamers have rollback on API failure.' -ForegroundColor DarkGray
+                Write-Host '  File Renaming is performed by each app -- FolderBoy only sends the command.' -ForegroundColor DarkGray
+                Write-Host ''
+                $confirm = Read-Host '  Type CONFIRM to proceed, or anything else to cancel'
+                if ($confirm -ne 'CONFIRM') {
+                    Write-Host '  Cancelled.' -ForegroundColor Yellow
+                    $Script:ReturnedToMenu = $true; break
+                }
+            }
+
+            # Determine per-tool live flags
+            $attended   = ($frMode -eq 1)
+            $liveAll    = ($frMode -eq 3)
+            $dryRunAll  = ($frMode -eq 2)
+
+            $Script:ToolStartTime = Get-Date
+
+            # Helper to get mode for a tool (attended asks, unattended uses preset)
+            function Get-FullRunMode([string]$ToolTitle, [string[]]$Options) {
+                if ($attended) {
+                    $m = Select-SubMode 'Select mode:' $Options -Title ('Full Run  >  ' + $ToolTitle)
+                    return $m
+                } elseif ($liveAll) {
+                    return 2  # Live
+                } else {
+                    return 1  # Dry Run
+                }
+            }
+
+            # 1. Sonarr Folder Renamer
+            if (-not $Script:QuitRequested -and $SonarrConfig.Enabled) {
+                $m = Get-FullRunMode 'Sonarr Folder Renamer' @(
                     'Dry Run     -- preview renames only (safe, no changes)'
                     'Live Rename -- rename folders and update Sonarr'
                 )
-                if ($sonarrMode -eq 0) { $Script:ReturnedToMenu = $true; break }
-                $sonarrModeStr = if ($sonarrMode -eq 2) { 'Live Rename' } else { 'Dry Run' }
-                Invoke-SonarrRenamer -LiveRename ($sonarrMode -eq 2)
-                Add-SessionEntry ("Sonarr Folder Renamer [{0}] -- complete" -f $sonarrModeStr)
-            } else {
-                Write-Host '  Sonarr is disabled in config -- skipping.' -ForegroundColor DarkGray
+                if ($m -eq  0) { $Script:ReturnedToMenu = $true; break }
+                if ($m -eq -1) { $Script:QuitRequested  = $true; break }
+                Invoke-SonarrRenamer -LiveRename ($m -eq 2)
+                Add-SessionEntry ('Full Run  >  Sonarr Folder Renamer [{0}]' -f $(if ($m -eq 2) {'Live'} else {'Dry Run'}))
+            } elseif (-not $SonarrConfig.Enabled) {
+                Write-Host '  Sonarr disabled -- skipping.' -ForegroundColor DarkGray
             }
 
-            if ($RadarrConfig.Enabled) {
-                $radarrMode = Select-SubMode 'Radarr Folder Renamer mode:' @(
+            # 2. Radarr Folder Renamer
+            if (-not $Script:QuitRequested -and $RadarrConfig.Enabled) {
+                $m = Get-FullRunMode 'Radarr Folder Renamer' @(
                     'Dry Run     -- preview renames only (safe, no changes)'
                     'Live Rename -- rename folders and update Radarr'
                 )
-                if ($radarrMode -eq 0) { $Script:ReturnedToMenu = $true; break }
-                $radarrModeStr = if ($radarrMode -eq 2) { 'Live Rename' } else { 'Dry Run' }
-                Invoke-RadarrFolderRenamer -LiveRename ($radarrMode -eq 2)
-                Add-SessionEntry ("Radarr Folder Renamer [{0}] -- complete" -f $radarrModeStr)
-            } else {
-                Write-Host '  Radarr is disabled in config -- skipping.' -ForegroundColor DarkGray
+                if ($m -eq  0) { $Script:ReturnedToMenu = $true; break }
+                if ($m -eq -1) { $Script:QuitRequested  = $true; break }
+                Invoke-RadarrFolderRenamer -LiveRename ($m -eq 2)
+                Add-SessionEntry ('Full Run  >  Radarr Folder Renamer [{0}]' -f $(if ($m -eq 2) {'Live'} else {'Dry Run'}))
+            } elseif (-not $RadarrConfig.Enabled) {
+                Write-Host '  Radarr disabled -- skipping.' -ForegroundColor DarkGray
             }
 
-            if ($LidarrConfig.Enabled) {
-                $lidarrMode = Select-SubMode 'Lidarr Folder Renamer mode:' @(
+            # 3. Lidarr Folder Renamer
+            if (-not $Script:QuitRequested -and $LidarrConfig.Enabled) {
+                $m = Get-FullRunMode 'Lidarr Folder Renamer' @(
                     'Dry Run     -- preview renames only (safe, no changes)'
                     'Live Rename -- rename folders and update Lidarr'
                 )
-                if ($lidarrMode -eq 0) { $Script:ReturnedToMenu = $true; break }
-                $lidarrModeStr = if ($lidarrMode -eq 2) { 'Live Rename' } else { 'Dry Run' }
-                Invoke-LidarrFolderRenamer -LiveRename ($lidarrMode -eq 2)
-                Add-SessionEntry ("Lidarr Folder Renamer [{0}] -- complete" -f $lidarrModeStr)
-            } else {
-                Write-Host '  Lidarr is disabled in config -- skipping.' -ForegroundColor DarkGray
+                if ($m -eq  0) { $Script:ReturnedToMenu = $true; break }
+                if ($m -eq -1) { $Script:QuitRequested  = $true; break }
+                Invoke-LidarrFolderRenamer -LiveRename ($m -eq 2)
+                Add-SessionEntry ('Full Run  >  Lidarr Folder Renamer [{0}]' -f $(if ($m -eq 2) {'Live'} else {'Dry Run'}))
+            } elseif (-not $LidarrConfig.Enabled) {
+                Write-Host '  Lidarr disabled -- skipping.' -ForegroundColor DarkGray
             }
 
-            $scanMode = Select-SubMode 'Orphan Scanner mode:' @(
-                'Scan Only     -- report orphans only (safe, no changes)'
-                'Scan + Delete -- report then interactively select folders to delete'
-            )
-            if ($scanMode -eq 0) { $Script:ReturnedToMenu = $true; break }
-            $scanModeStr = if ($scanMode -eq 2) { 'Scan + Delete' } else { 'Scan Only' }
-            Invoke-OrphanScanner -WithDelete ($scanMode -eq 2) -Scope 'All'
-            Add-SessionEntry ("Orphan Scanner [{0}] [All] -- complete" -f $scanModeStr)
+            # 4. Orphan Scanner (All, Scan Only in unattended; interactive in attended)
+            if (-not $Script:QuitRequested) {
+                if ($attended) {
+                    $scanMode = Select-SubMode 'Select mode:' @(
+                        'Scan Only     -- report orphans only (safe, no changes)'
+                        'Scan + Delete -- report then interactively select folders to delete'
+                    ) -Title 'Full Run  >  Orphan Scanner'
+                    if ($scanMode -eq  0) { $Script:ReturnedToMenu = $true; break }
+                    if ($scanMode -eq -1) { $Script:QuitRequested  = $true; break }
+                    $scanWithDelete = ($scanMode -eq 2)
+                } else {
+                    $scanWithDelete = $false  # unattended always Scan Only (delete requires interaction)
+                }
+                Invoke-OrphanScanner -WithDelete $scanWithDelete -Scope 'All'
+                Add-SessionEntry ('Full Run  >  Orphan Scanner [{0}]' -f $(if ($scanWithDelete) {'Scan+Delete'} else {'Scan Only'}))
+            }
+
+            # 5. Sonarr File Renamer
+            if (-not $Script:QuitRequested -and $SonarrConfig.Enabled) {
+                $m = Get-FullRunMode 'Sonarr File Renamer' @(
+                    'Dry Run     -- preview file renames only (safe, no changes)'
+                    'Live Rename -- send rename commands to Sonarr'
+                )
+                if ($m -eq  0) { $Script:ReturnedToMenu = $true; break }
+                if ($m -eq -1) { $Script:QuitRequested  = $true; break }
+                Invoke-SonarrFileRenamer -LiveRename ($m -eq 2)
+                Add-SessionEntry ('Full Run  >  Sonarr File Renamer [{0}]' -f $(if ($m -eq 2) {'Live'} else {'Dry Run'}))
+            }
+
+            # 6. Radarr File Renamer
+            if (-not $Script:QuitRequested -and $RadarrConfig.Enabled) {
+                $m = Get-FullRunMode 'Radarr File Renamer' @(
+                    'Dry Run     -- preview file renames only (safe, no changes)'
+                    'Live Rename -- send rename commands to Radarr'
+                )
+                if ($m -eq  0) { $Script:ReturnedToMenu = $true; break }
+                if ($m -eq -1) { $Script:QuitRequested  = $true; break }
+                Invoke-RadarrFileRenamer -LiveRename ($m -eq 2)
+                Add-SessionEntry ('Full Run  >  Radarr File Renamer [{0}]' -f $(if ($m -eq 2) {'Live'} else {'Dry Run'}))
+            }
+
+            # 7. Lidarr File Renamer
+            if (-not $Script:QuitRequested -and $LidarrConfig.Enabled) {
+                $m = Get-FullRunMode 'Lidarr File Renamer' @(
+                    'Dry Run     -- preview file renames only (safe, no changes)'
+                    'Live Rename -- send rename commands to Lidarr'
+                )
+                if ($m -eq  0) { $Script:ReturnedToMenu = $true; break }
+                if ($m -eq -1) { $Script:QuitRequested  = $true; break }
+                Invoke-LidarrFileRenamer -LiveRename ($m -eq 2)
+                Add-SessionEntry ('Full Run  >  Lidarr File Renamer [{0}]' -f $(if ($m -eq 2) {'Live'} else {'Dry Run'}))
+            }
+
+            # 8. Media Dashboard
+            if (-not $Script:QuitRequested) {
+                if ($attended) {
+                    $dashMode = Select-SubMode 'Select mode:' @(
+                        'Quick -- API data only (fast)'
+                        'Full  -- API + filesystem scan (slower, more detail)'
+                    ) -Title 'Full Run  >  Media Dashboard'
+                    if ($dashMode -eq  0) { $Script:ReturnedToMenu = $true; break }
+                    if ($dashMode -eq -1) { $Script:QuitRequested  = $true; break }
+                    $dashFull = ($dashMode -eq 2)
+                } else {
+                    $dashFull = $false  # unattended: Quick mode
+                }
+                Invoke-MediaDashboardDirect -FullScan $dashFull
+                Add-SessionEntry ('Full Run  >  Dashboard [{0}]' -f $(if ($dashFull) {'Full'} else {'Quick'}))
+            }
         }
 
         '7' {
+            $Script:ToolStartTime = Get-Date
             Invoke-MediaDashboard
-            Add-SessionEntry 'Media Dashboard -- complete'
+            Add-SessionEntry 'Media Dashboard'
         }
 
         '8' {
-            Write-Host ''
-            Write-Host '  Goodbye.' -ForegroundColor Cyan
-            Write-Host ''
+            $Script:ToolStartTime = Get-Date
+            $mode = Select-SubMode 'Select mode:' @(
+                'Dry Run     -- preview which files would be renamed (safe, no changes)'
+                'Live Rename -- send rename commands to each *arr app'
+            ) -Title 'Media File Renamer'
+            if ($mode -eq  0) { $Script:ReturnedToMenu = $true; break }
+            if ($mode -eq -1) { $Script:QuitRequested  = $true; break }
+            $modeStr = if ($mode -eq 2) { 'Live Rename' } else { 'Dry Run' }
+            Invoke-MediaFileRenamer -LiveRename ($mode -eq 2)
+            Add-SessionEntry ("Media File Renamer [{0}]" -f $modeStr)
         }
     }
 
-    if ($menuChoice -ne '8' -and -not $Script:ReturnedToMenu) {
+    if ($Script:QuitRequested) { break }
+
+    if (-not $Script:ReturnedToMenu) {
         Write-Host ''
-        Write-Host '  Press any key to return to the main menu...' -ForegroundColor DarkGray
-        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+        Write-Host '  Press M for main menu, or any other key to continue...' -ForegroundColor DarkGray
+        $key = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+        if ($key.Character -eq 'M' -or $key.Character -eq 'm') {
+            # let loop naturally redraw menu
+        }
     }
     $Script:ReturnedToMenu = $false
 
-} while ($menuChoice -ne '8')
+} while (-not $Script:QuitRequested)
+
+Write-Host ''
+Write-Host '  Goodbye.' -ForegroundColor Cyan
+Write-Host ''

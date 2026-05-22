@@ -1,10 +1,10 @@
 # FolderBoy Test Checklist
-Version: 0.5.2 | Updated: 2026-05-19
+Version: 0.6.0 | Updated: 2026-05-21
 
 Check off each item as you test it. Note any unexpected output in the space provided.
 
 **Legend:**
-- `[x]` — Verified by automated logic tests (`FolderBoy_LogicTests.ps1`, 79/79 pass)
+- `[x]` — Verified by automated logic tests (`FolderBoy_LogicTests.ps1`, now 87 checks)
 - `[c]` — Verified by code inspection (structure confirmed; needs live confirmation)
 - `[ ]` — Needs live interactive testing
 
@@ -44,8 +44,8 @@ Notes:
 ## 3. FolderBoy Cleaner
 
 - [ ] **3.1** Dry Run — TV Shows — 0 folders flagged, correct path shown
-- [ ] **3.2** Dry Run — Movies — 0 folders flagged, all 5 paths scanned
-- [ ] **3.3** Dry Run — Music — 0 folders flagged, correct path shown
+- [ ] **3.2** Dry Run — Movies — 0 folders flagged, all 5 paths scanned, no progress line bleed between paths
+- [ ] **3.3** Dry Run — Music — 2 folders flagged (Queen `.wv` -- not in music extensions config); `.wv` listed in non-media file type table
 - [c] **3.4** Dry Run — All Libraries — runs all three presets in sequence, overall summary matches individual totals *(code: CF8, CF9 — All Libraries mode and `Invoke-CleanerScan` helper confirmed)*
 - [ ] **3.5** Create a test folder with only `.nfo` and `.jpg` files in a library path — Dry Run shows `[WOULD DELETE]`
 - [ ] **3.6** Live Delete — delete the test folder from 3.5 — shows `[DELETED]`, folder gone from disk
@@ -78,7 +78,7 @@ Notes:
 
 ## 5. Radarr Folder Renamer
 
-- [ ] **5.1** Dry Run — Minimum format — 0 renames, 4193 already correct — matches baseline
+- [ ] **5.1** Dry Run — Minimum format — 1 rename (S&M), 4197 already correct, 37 missing, 7 no-year
 - [ ] **5.2** Dry Run — Plex format — verify `{imdb-}` tags appear in WOULD RENAME output
 - [c] **5.3** `SuppressMissing = $true` — 42 missing entries suppressed, count still in summary *(code: CF2 — `RadarrConfig.SuppressMissing` guard confirmed in renamer)*
 - [c] **5.4** `SuppressMissing = $false` — 42 missing entries visible *(code: CF2)*
@@ -107,7 +107,7 @@ Notes:
 
 ## 7. Orphan Scanner
 
-- [ ] **7.1** Scan Only — All Libraries — matches baseline: 12 Radarr, 0 Sonarr, 0 Lidarr
+- [ ] **7.1** Scan Only — All Libraries — matches baseline: 13 Radarr, 0 Sonarr, 0 Lidarr
 - [c] **7.2** Scan Only — Radarr only — 12 orphans, Sonarr/Lidarr show "Not scanned" *(code: CF6 — `$Scope` parameter and "Not scanned" label confirmed)*
 - [ ] **7.3** Scan Only — Sonarr only — 0 orphans
 - [ ] **7.4** Scan Only — Lidarr only — 0 orphans
@@ -149,9 +149,12 @@ Notes:
 
 ## 9. Full Run
 
-- [c] **9.1** Full Run — all tools Dry Run — runs Sonarr → Radarr → Lidarr renamers then Orphan Scanner without errors *(code: CF13 — `Invoke-LidarrFolderRenamer` call in Full Run branch confirmed)*
-- [c] **9.2** Full Run — disabled app in config — skipped gracefully, other tools run normally *(code: CF15 — disabled-skip guards confirmed in all Full Run branches)*
-- [ ] **9.3** Session log after Full Run — shows entries for all tools that ran
+- [ ] **9.1** Attended mode — choose Dry Run for each tool — all 8 run in sequence without errors
+- [c] **9.2** Disabled app — skipped gracefully with message, other tools continue normally *(code: disabled-skip guards confirmed in all Full Run tool branches)*
+- [ ] **9.3** Dry Run All — all 8 tools run without any further prompts after mode selection
+- [ ] **9.4** Live All — CONFIRM prompt appears; typing anything else cancels; typing CONFIRM proceeds
+- [ ] **9.5** Session log after Full Run — single entry summarising all 8 tools and their modes
+- [ ] **9.6** Press M during Attended mode at a tool prompt — returns to main menu cleanly
 
 Notes:
 ```
@@ -188,21 +191,40 @@ Notes:
 
 ---
 
+## 12. Media File Renamer
+
+- [ ] **12.1** Dry Run — Sonarr — 1,901 files shown across 567 series (baseline from dry run suite)
+- [ ] **12.2** Dry Run — Radarr — 1 file shown (S&M rename)
+- [ ] **12.3** Dry Run — Lidarr — 1,055 files shown across 41 artists (baseline); notable delay expected (~5 min for 719 API calls)
+- [ ] **12.4** Dry Run — All apps — all three run in sequence, Sonarr first
+- [ ] **12.5** Single series scope — pick one series — only that series's files shown
+- [x] **12.6** Summary table — artist/series/movie column populated correctly (not blank) *(code: Group-Object now uses ID field + Group[0].PropertyName)*
+- [ ] **12.7** Log file saved to `Logs\FolderBoy_FileRenamer_*.log`
+- [ ] **12.8** Session log entry shows app and mode after run
+
+Notes:
+```
+
+```
+
+---
+
 ## Summary
 
 | Section | Total | Auto `[x]` | Code `[c]` | Live `[ ]` |
 |---|---|---|---|---|
 | 1. Startup & Config | 6 | 0 | 2 | 4 |
-| 2. Dashboard | 5 | 0 | 2 | 3 |
+| 2. Library Health Dashboard | 5 | 0 | 2 | 3 |
 | 3. Cleaner | 8 | 0 | 2 | 6 |
 | 4. Sonarr Renamer | 5 | 0 | 2 | 3 |
 | 5. Radarr Renamer | 5 | 0 | 2 | 3 |
 | 6. Lidarr Renamer | 4 | 2 | 2 | 0 |
 | 7. Orphan Scanner | 11 | 2 | 2 | 7 |
 | 8. Media Dashboard | 11 | 0 | 0 | 11 |
-| 9. Full Run | 3 | 0 | 2 | 1 |
+| 9. Full Run | 6 | 0 | 1 | 5 |
 | 10. Log Files | 3 | 1 | 0 | 2 |
 | 11. Edge Cases | 5 | 0 | 0 | 5 |
-| **Total** | **66** | **5** | **16** | **45** |
+| 12. Media File Renamer | 8 | 1 | 0 | 7 |
+| **Total** | **77** | **6** | **15** | **56** |
 
 `[x]` = logic test verified · `[c]` = code inspection confirmed · `[ ]` = needs live testing
