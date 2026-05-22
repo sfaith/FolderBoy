@@ -455,7 +455,8 @@ function Invoke-CleanerScan {
     $totalGB = [math]::Round($totalBytes / 1GB, 2)
     $totalMB = [math]::Round($totalBytes / 1MB, 1)
 
-    Write-Log ('  ' + ('-' * 66))
+    $anyFlagged = $toDelete.Count -gt 0 -or $deleted.Count -gt 0 -or $failed.Count -gt 0
+    if ($anyFlagged) { Write-Log ('  ' + ('-' * 66)) }
     Write-Log ''
 
     if ($LiveDelete) {
@@ -2143,7 +2144,7 @@ function Invoke-MediaDashboardDirect {
 #  TOOL 8: MEDIA FILE RENAMER
 # ================================================================
 function Invoke-SonarrFileRenamer {
-    param([bool]$LiveRename = $false, [bool]$SharedLog = $false)
+    param([bool]$LiveRename = $false, [bool]$SharedLog = $false, [bool]$SummaryOnly = $false)
 
     if (-not $SharedLog) { Start-Log 'FolderBoy_FileRenamer' }
     Write-Log ''
@@ -2233,14 +2234,17 @@ function Invoke-SonarrFileRenamer {
     Write-SectionHeader 'FILES THAT NEED RENAMING'
     Write-Log ''
 
-    $lastSeries = ''
-    foreach ($r in $allRenames) {
-        if ($r.SeriesTitle -ne $lastSeries) {
-            Write-Log ("  -- {0}" -f $r.SeriesTitle) 'Yellow'
-            $lastSeries = $r.SeriesTitle
+    if (-not $SummaryOnly) {
+        $lastSeries = ''
+        foreach ($r in $allRenames) {
+            if ($r.SeriesTitle -ne $lastSeries) {
+                Write-Log ("  -- {0}" -f $r.SeriesTitle) 'Yellow'
+                $lastSeries = $r.SeriesTitle
+            }
+            Write-Log ("    From : {0}" -f $r.ExistingPath) 'White'
+            Write-Log ("    To   : {0}" -f $r.NewPath) 'Cyan'
         }
-        Write-Log ("    From : {0}" -f $r.ExistingPath) 'White'
-        Write-Log ("    To   : {0}" -f $r.NewPath) 'Cyan'
+        Write-Log ''
     }
 
     # Per-series summary table
@@ -2302,7 +2306,7 @@ function Invoke-SonarrFileRenamer {
 }
 
 function Invoke-RadarrFileRenamer {
-    param([bool]$LiveRename = $false, [bool]$SharedLog = $false)
+    param([bool]$LiveRename = $false, [bool]$SharedLog = $false, [bool]$SummaryOnly = $false)
 
     if (-not $SharedLog) { Start-Log 'FolderBoy_FileRenamer' }
     Write-Log ''
@@ -2392,10 +2396,13 @@ function Invoke-RadarrFileRenamer {
     Write-SectionHeader 'FILES THAT NEED RENAMING'
     Write-Log ''
 
-    foreach ($r in $allRenames) {
-        Write-Log ("  -- {0}" -f $r.Title) 'Yellow'
-        Write-Log ("    From : {0}" -f $r.ExistingPath) 'White'
-        Write-Log ("    To   : {0}" -f $r.NewPath) 'Cyan'
+    if (-not $SummaryOnly) {
+        foreach ($r in $allRenames) {
+            Write-Log ("  -- {0}" -f $r.Title) 'Yellow'
+            Write-Log ("    From : {0}" -f $r.ExistingPath) 'White'
+            Write-Log ("    To   : {0}" -f $r.NewPath) 'Cyan'
+        }
+        Write-Log ''
     }
 
     # Per-movie summary table
@@ -2456,7 +2463,7 @@ function Invoke-RadarrFileRenamer {
 }
 
 function Invoke-LidarrFileRenamer {
-    param([bool]$LiveRename = $false, [bool]$SharedLog = $false)
+    param([bool]$LiveRename = $false, [bool]$SharedLog = $false, [bool]$SummaryOnly = $false)
 
     if (-not $SharedLog) { Start-Log 'FolderBoy_FileRenamer' }
     Write-Log ''
@@ -2544,14 +2551,17 @@ function Invoke-LidarrFileRenamer {
     Write-SectionHeader 'FILES THAT NEED RENAMING'
     Write-Log ''
 
-    $lastArtist = ''
-    foreach ($r in $allRenames) {
-        if ($r.ArtistName -ne $lastArtist) {
-            Write-Log ("  -- {0}" -f $r.ArtistName) 'Yellow'
-            $lastArtist = $r.ArtistName
+    if (-not $SummaryOnly) {
+        $lastArtist = ''
+        foreach ($r in $allRenames) {
+            if ($r.ArtistName -ne $lastArtist) {
+                Write-Log ("  -- {0}" -f $r.ArtistName) 'Yellow'
+                $lastArtist = $r.ArtistName
+            }
+            Write-Log ("    From : {0}" -f $r.ExistingPath) 'White'
+            Write-Log ("    To   : {0}" -f $r.NewPath) 'Cyan'
         }
-        Write-Log ("    From : {0}" -f $r.ExistingPath) 'White'
-        Write-Log ("    To   : {0}" -f $r.NewPath) 'Cyan'
+        Write-Log ''
     }
 
     # Per-artist summary table
@@ -2647,14 +2657,26 @@ function Invoke-MediaFileRenamer {
     if ($appChoice -eq -1) { $Script:QuitRequested = $true; return }
     $selectedApp = $appOptions[$appChoice - 1]
 
+    # Detail level prompt for dry runs (live always shows summary only for brevity in logs)
+    $summaryOnly = $false
+    if (-not $LiveRename) {
+        Write-Host ''
+        Write-Host '  Select output detail level:' -ForegroundColor Cyan
+        Write-Host '    (1) Full listing  -- show every From/To file path (may be very long)'
+        Write-Host '    (2) Summary only  -- show per-app summary table only (faster to review)'
+        Write-Host ''
+        do { $detailChoice = Read-Host '  Choice' } until ($detailChoice -in '1','2')
+        $summaryOnly = ($detailChoice -eq '2')
+    }
+
     switch ($selectedApp) {
-        'Sonarr'   { Invoke-SonarrFileRenamer -LiveRename $LiveRename -SharedLog $true }
-        'Radarr'   { Invoke-RadarrFileRenamer  -LiveRename $LiveRename -SharedLog $true }
-        'Lidarr'   { Invoke-LidarrFileRenamer  -LiveRename $LiveRename -SharedLog $true }
+        'Sonarr'   { Invoke-SonarrFileRenamer -LiveRename $LiveRename -SharedLog $true -SummaryOnly $summaryOnly }
+        'Radarr'   { Invoke-RadarrFileRenamer  -LiveRename $LiveRename -SharedLog $true -SummaryOnly $summaryOnly }
+        'Lidarr'   { Invoke-LidarrFileRenamer  -LiveRename $LiveRename -SharedLog $true -SummaryOnly $summaryOnly }
         'All apps' {
-            if ($SonarrConfig.Enabled) { Invoke-SonarrFileRenamer -LiveRename $LiveRename -SharedLog $true }
-            if ($RadarrConfig.Enabled) { Invoke-RadarrFileRenamer  -LiveRename $LiveRename -SharedLog $true }
-            if ($LidarrConfig.Enabled) { Invoke-LidarrFileRenamer  -LiveRename $LiveRename -SharedLog $true }
+            if ($SonarrConfig.Enabled) { Invoke-SonarrFileRenamer -LiveRename $LiveRename -SharedLog $true -SummaryOnly $summaryOnly }
+            if ($RadarrConfig.Enabled) { Invoke-RadarrFileRenamer  -LiveRename $LiveRename -SharedLog $true -SummaryOnly $summaryOnly }
+            if ($LidarrConfig.Enabled) { Invoke-LidarrFileRenamer  -LiveRename $LiveRename -SharedLog $true -SummaryOnly $summaryOnly }
         }
     }
 
@@ -3101,5 +3123,5 @@ do {
 } while (-not $Script:QuitRequested)
 
 Write-Host ''
-Write-Host '  Goodbye.' -ForegroundColor Cyan
+Write-Host '  All done for now. Thanks for using FolderBoy -- hope the library''s looking great!' -ForegroundColor Cyan
 Write-Host ''

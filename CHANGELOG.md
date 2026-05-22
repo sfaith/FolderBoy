@@ -18,6 +18,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   Lidarr in all menus (currently last in most, pending test confirmation)
 
 ### Fixed (unreleased patches)
+- **Exit message** -- "Goodbye." replaced with a warm, personal thank-you message.
+- **Media File Renamer -- Summary Only mode** -- after selecting app scope, a new
+  detail-level prompt lets the user choose between Full listing (all From/To paths,
+  original behavior) and Summary only (per-app table only, no per-file lines). Dry
+  run only; Live Rename always shows the summary table. Keeps large-library logs
+  (4,000+ movies) from becoming unwieldy.
+- **FolderBoy Cleaner -- separator visual** -- the closing `------` divider line in
+  `Invoke-CleanerScan` is now only printed when at least one folder was flagged.
+  Previously it appeared even on clean runs, producing an orphaned dashes line with
+  nothing between it and the summary counts.
 - **File Renamer summary tables -- Group-Object scriptblock** -- `Group-Object PropertyName`
   on `List[hashtable]` groups everything into one bucket (key access fails silently); all
   six `Group-Object` calls (summary display + live rename grouping for each of Sonarr,
