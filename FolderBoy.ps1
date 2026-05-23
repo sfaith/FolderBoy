@@ -257,7 +257,7 @@ function Confirm-LiveAction ([string]$Warning) {
     Write-Log '  This action cannot be undone. A log will be saved next to this script.' 'Yellow'
     Write-Log ''
     $confirm = Read-Host '  Type YES to proceed, or anything else to abort'
-    if ($confirm -ne 'YES') {
+    if ($confirm.ToUpper() -ne 'YES') {
         Write-Log '  Aborted. No changes were made.' 'Yellow'
         return $false
     }
