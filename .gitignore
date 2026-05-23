@@ -4,5 +4,8 @@
 # Never commit this file. Use FolderBoy.config.example.ps1 as a template.
 FolderBoy.config.ps1
 
+# Local Claude context file -- not for public repo
+CLAUDE.md
+
 # Log files are written to the Logs\ subdirectory at runtime.
 Logs/
