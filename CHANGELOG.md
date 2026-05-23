@@ -17,7 +17,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Menu consistency: "All apps" / "All libraries" option to appear after Sonarr, Radarr,
   Lidarr in all menus (currently last in most, pending test confirmation)
 
-### Fixed (unreleased patches)
+---
+
+## [0.6.3] - 2026-05-23
+
+### Fixed
+- **`Confirm-LiveAction` case sensitivity** -- confirmation prompt now accepts
+  `yes`, `Yes`, or `YES` consistently. Previously required exact case match `YES`,
+  rejecting lowercase variants. Matches TrashBoy behavior.
 - **Exit message** -- "Goodbye." replaced with a warm, personal thank-you message.
 - **Orphan Scanner path header collision** -- `Clear-Progress` was missing before
   the `Scanning \\path (N folders)` line in `Invoke-RadarrScan`, `Invoke-SonarrScan`,
@@ -35,75 +42,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   nothing between it and the summary counts.
 - **File Renamer summary tables -- Group-Object scriptblock** -- `Group-Object PropertyName`
   on `List[hashtable]` groups everything into one bucket (key access fails silently); all
-  six `Group-Object` calls (summary display + live rename grouping for each of Sonarr,
-  Radarr, Lidarr) changed to `Group-Object { $_.PropertyName }` scriptblock form. Summary
-  tables now correctly show one row per series/movie/artist.
+  six `Group-Object` calls changed to `Group-Object { $_.PropertyName }` scriptblock form.
+  Summary tables now correctly show one row per series/movie/artist.
 - **Full Run session log -- one entry per tool** -- previously joined all 8 tool results
   into a single session log line. Now each tool adds its own entry with individual
   timestamp and elapsed time.
 - **Full Run file renamer log contamination** -- when called from Full Run, Sonarr/Radarr/
-  Lidarr File Renamer sub-functions inherited the Orphan Scanner's `$Script:LogFile`,
-  writing all file rename output into the scanner log (producing 1MB+ scanner logs).
-  Fixed with a `-SharedLog` parameter: sub-functions call `Start-Log` when invoked
-  standalone from Full Run, and skip it when invoked via `Invoke-MediaFileRenamer`
-  (Tool 8) which manages the shared log itself.
+  Lidarr File Renamer sub-functions inherited the Orphan Scanner's `$Script:LogFile`.
+  Fixed with a `-SharedLog` parameter.
 - **Media File Renamer session log missing app name** -- `Add-SessionEntry` for Tool 8
-  only recorded mode (Dry Run / Live) but not which app was selected. `Invoke-MediaFileRenamer`
-  now returns `$selectedApp` to the caller; session entry format is now
-  `Media File Renamer [Live Rename] [Sonarr]`. Entry is suppressed on M/Q abort.
-- **README** -- added Prerequisites section (OS, PowerShell, network, filesystem, naming
-  conventions), expanded Recommended Naming Conventions with exact format strings and
-  direct TRaSH Guide links for all three apps, updated Recommended Workflow to include
-  File Renamer steps, added Lidarr slowness to Troubleshooting, added References section.
-
----
-
-## [0.6.0] - 2026-05-21
-
-### Added
-- **Progress indicator** -- `Write-Progress2` and `Clear-Progress` helpers added.
-  All long-running loops now show a live `\r`-overwrite console status line in the
-  format `  Label N / Total  (Item Name)` with a 90-char pad to prevent leftovers.
-  Loops instrumented: Cleaner folder scan, Sonarr/Radarr/Lidarr Folder Renamer,
-  Orphan Scanner (all three apps), Dashboard Full mode filesystem scans (all three
-  apps), Sonarr/Radarr/Lidarr File Renamer API check loops. Console only -- log
-  file is never affected.
-- **Full Run redesign (Tool 6)** -- now runs all 8 tools in sequence: Sonarr Folder
-  Renamer → Radarr Folder Renamer → Lidarr Folder Renamer → Orphan Scanner → Sonarr
-  File Renamer → Radarr File Renamer → Lidarr File Renamer → Media Dashboard.
-  Three run modes: (1) Attended -- prompts per tool; (2) Dry Run All -- no prompts,
-  all dry runs; (3) Live All -- requires typing `CONFIRM`, clearly explains what will
-  and won't be changed (Orphan Scanner stays Scan Only; Dashboard runs Quick).
-- **`Invoke-MediaDashboardDirect`** -- unattended entry point for the Dashboard used
-  by Full Run; accepts `-FullScan` parameter, bypasses interactive menus.
-- **`Get-FullRunMode` helper** -- inner function used by Full Run to select tool mode
-  based on attended vs unattended setting.
-- **Media File Renamer (Tool 8)** -- added in v0.6.1, now fully integrated: scope
-  selection (all or single), dry run / live, per-app summary tables, Full Run support.
-
-### Changed
-- **Tool ordering** -- Sonarr → Radarr → Lidarr → All apps enforced consistently
-  throughout: main menu health widget, Orphan Scanner scope menu, Dashboard app menu
-  and All apps dispatch order, `Invoke-MediaDashboardDirect` dispatch order.
-- **Main menu** -- Full Run description updated to reflect all 8 tools.
-- **Orphan Scanner scope menu** -- reordered: All → Sonarr → Radarr → Lidarr.
-
-### Fixed
-- **Progress indicator `\r` collision** -- `Clear-Progress` is now called immediately
-  before every mid-loop `Write-Log` that produces visible output (`[WOULD RENAME]`,
-  `[MISSING]`, `[NO YEAR]`, `[NO IMDB ID]`, `[MISMATCH]`, `[CONFLICT]`, `[RENAMED]`,
-  `[API FAIL]`, `[DELETED]`, `[FAILED]`, `[WOULD DELETE]`) across all three Folder
-  Renamers and the Cleaner. Fixes garbled output on multi-root libraries.
-- **Cleaner multi-root progress collision** -- `Clear-Progress` added before each
-  "Scanning \\\path (N subfolders)" header line in the outer root loop, so the
-  previous root's progress line is always cleared before the next root announces.
-- **File Renamer summary tables -- blank name column** -- `Group-Object` on
-  `List[hashtable]` cannot access hashtable keys as property names, so `$_.Name`
-  was blank. All three summary tables now use `Group-Object {ID field}` +
-  `$_.Group[0].{NameField}` for display, matching the fix applied to Folder Renamer
-  count lines in earlier patches.
-- **Lidarr Folder Renamer live rename output** -- `Clear-Progress` added before
-  `[RENAMED]` and `[API FAIL]` lines, consistent with Sonarr and Radarr.
+  now records which app was selected alongside mode. Entry suppressed on M/Q abort.
+- **README** -- added Prerequisites, expanded Recommended Naming Conventions, updated
+  Recommended Workflow, added Lidarr slowness to Troubleshooting, added References.
 
 ---
 
@@ -153,7 +103,48 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`Invoke-ArrPost` helper** -- new generic POST function (parallel to the existing
   `Invoke-ArrGet` / `Invoke-ArrPut`) used by all three file renamer sub-functions
   to send commands to the *arr APIs.
+- **Progress indicator** -- `Write-Progress2` and `Clear-Progress` helpers added.
+  All long-running loops now show a live `\r`-overwrite console status line in the
+  format `  Label N / Total  (Item Name)` with a 90-char pad to prevent leftovers.
+  Loops instrumented: Cleaner folder scan, Sonarr/Radarr/Lidarr Folder Renamer,
+  Orphan Scanner (all three apps), Dashboard Full mode filesystem scans (all three
+  apps), Sonarr/Radarr/Lidarr File Renamer API check loops. Console only -- log
+  file is never affected.
+- **Full Run redesign (Tool 6)** -- now runs all 8 tools in sequence: Sonarr Folder
+  Renamer → Radarr Folder Renamer → Lidarr Folder Renamer → Orphan Scanner → Sonarr
+  File Renamer → Radarr File Renamer → Lidarr File Renamer → Media Dashboard.
+  Three run modes: (1) Attended -- prompts per tool; (2) Dry Run All -- no prompts,
+  all dry runs; (3) Live All -- requires typing `CONFIRM`, clearly explains what will
+  and won't be changed (Orphan Scanner stays Scan Only; Dashboard runs Quick).
+- **`Invoke-MediaDashboardDirect`** -- unattended entry point for the Dashboard used
+  by Full Run; accepts `-FullScan` parameter, bypasses interactive menus.
+- **`Get-FullRunMode` helper** -- inner function used by Full Run to select tool mode
+  based on attended vs unattended setting.
 - **Exit moved to option 9** -- menu renumbered to accommodate Media File Renamer at 8.
+
+### Changed
+- **Tool ordering** -- Sonarr → Radarr → Lidarr → All apps enforced consistently
+  throughout: main menu health widget, Orphan Scanner scope menu, Dashboard app menu
+  and All apps dispatch order, `Invoke-MediaDashboardDirect` dispatch order.
+- **Main menu** -- Full Run description updated to reflect all 8 tools.
+- **Orphan Scanner scope menu** -- reordered: All → Sonarr → Radarr → Lidarr.
+
+### Fixed
+- **Progress indicator `\r` collision** -- `Clear-Progress` is now called immediately
+  before every mid-loop `Write-Log` that produces visible output (`[WOULD RENAME]`,
+  `[MISSING]`, `[NO YEAR]`, `[NO IMDB ID]`, `[MISMATCH]`, `[CONFLICT]`, `[RENAMED]`,
+  `[API FAIL]`, `[DELETED]`, `[FAILED]`, `[WOULD DELETE]`) across all three Folder
+  Renamers and the Cleaner. Fixes garbled output on multi-root libraries.
+- **Cleaner multi-root progress collision** -- `Clear-Progress` added before each
+  "Scanning \\\path (N subfolders)" header line in the outer root loop, so the
+  previous root's progress line is always cleared before the next root announces.
+- **File Renamer summary tables -- blank name column** -- `Group-Object` on
+  `List[hashtable]` cannot access hashtable keys as property names, so `$_.Name`
+  was blank. All three summary tables now use `Group-Object {ID field}` +
+  `$_.Group[0].{NameField}` for display, matching the fix applied to Folder Renamer
+  count lines in earlier patches.
+- **Lidarr Folder Renamer live rename output** -- `Clear-Progress` added before
+  `[RENAMED]` and `[API FAIL]` lines, consistent with Sonarr and Radarr.
 
 ---
 

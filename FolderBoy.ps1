@@ -1,5 +1,5 @@
 ﻿# ================================================================
-#  FolderBoy.ps1  |  Media Library Manager  |  v0.6.0
+#  FolderBoy.ps1  |  Media Library Manager  |  v0.6.3
 #  https://github.com/sfaith/FolderBoy
 #
 #  A PowerShell toolkit for managing Sonarr, Radarr, and Lidarr
