@@ -6,6 +6,7 @@ FolderBoy.config.ps1
 
 # Local Claude context file -- not for public repo
 CLAUDE.md
+NewChatPrompt.md
 
 # Log files are written to the Logs\ subdirectory at runtime.
 Logs/
