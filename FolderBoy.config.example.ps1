@@ -140,7 +140,7 @@ $FolderBoyPresets = [ordered]@{
     '3' = @{
         Label = 'Music'
         Exts  = @('.mp3','.flac','.wav','.aac','.ogg','.wma',
-                  '.m4a','.alac','.aiff','.ape','.opus','.dsf','.dff')
+                  '.m4a','.alac','.aiff','.ape','.opus','.dsf','.dff','.wv')
         Paths = $LidarrConfig.Paths      # Reuses Lidarr paths if defined above
         # If using API auto-fetch for Lidarr, set explicitly instead:
         # Paths = @('\\YOUR-SERVER\Music')
