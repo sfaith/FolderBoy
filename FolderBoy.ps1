@@ -186,10 +186,10 @@ function Clear-Progress {
 }
 
 function Get-FolderSizeBytes ([string]$Path) {
-    $bytes = (Get-ChildItem -LiteralPath $Path -Recurse -ErrorAction SilentlyContinue |
-              Where-Object { -not $_.PSIsContainer } |
-              Measure-Object -Property Length -Sum).Sum
-    if ($bytes) { return [long]$bytes } else { return [long]0 }
+    $measure = Get-ChildItem -LiteralPath $Path -Recurse -ErrorAction SilentlyContinue |
+               Where-Object { -not $_.PSIsContainer } |
+               Measure-Object -Property Length -Sum
+    if ($measure -and $measure.Sum) { return [long]$measure.Sum } else { return [long]0 }
 }
 
 function Format-Bytes ([long]$Bytes) {
