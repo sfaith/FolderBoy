@@ -237,7 +237,7 @@ T 'LF7'  'File Renamer log prefix correct'             ($src -match "Start-Log '
 
 # ── Print results ─────────────────────────────────────────────────────────────
 Write-Host ''
-Write-Host '  ─────────────────────────────────────────────────────────────────' -ForegroundColor Cyan
+Write-Host ('  ' + ('-' * 65)) -ForegroundColor Cyan
 $results | ForEach-Object {
     if ($_.Result -eq 'PASS') {
         Write-Host ("  PASS  {0,-5}  {1}" -f $_.ID, $_.Desc) -ForegroundColor Green
@@ -247,7 +247,7 @@ $results | ForEach-Object {
         Write-Host ("         expected: [{0}]"  -f $_.Expected) -ForegroundColor Yellow
     }
 }
-Write-Host '  ─────────────────────────────────────────────────────────────────' -ForegroundColor Cyan
+Write-Host ('  ' + ('-' * 65)) -ForegroundColor Cyan
 $color = if ($fail -gt 0) { 'Red' } else { 'Green' }
 Write-Host ("  {0} passed   {1} failed" -f $pass, $fail) -ForegroundColor $color
 Write-Host ''
