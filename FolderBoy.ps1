@@ -133,9 +133,9 @@ $LidarrConfig.ApiVersion = 'v1'
 
 # Default SuppressMissing to $false if not set in config.
 # Set to $true in config to hide [MISSING] path entries in renamer output.
-if ($null -eq $SonarrConfig.SuppressMissing) { $SonarrConfig.SuppressMissing = $false }
-if ($null -eq $RadarrConfig.SuppressMissing) { $RadarrConfig.SuppressMissing = $false }
-if ($null -eq $LidarrConfig.SuppressMissing) { $LidarrConfig.SuppressMissing = $false }
+if (-not $SonarrConfig.ContainsKey('SuppressMissing')) { $SonarrConfig.SuppressMissing = $false }
+if (-not $RadarrConfig.ContainsKey('SuppressMissing')) { $RadarrConfig.SuppressMissing = $false }
+if (-not $LidarrConfig.ContainsKey('SuppressMissing')) { $LidarrConfig.SuppressMissing = $false }
 
 # ================================================================
 #  SHARED HELPERS
@@ -2728,7 +2728,7 @@ function Show-MainMenu {
             } elseif (-not $d.ApiOk) {
                 Write-Host ("    {0,-8}  API unreachable" -f $app.Name) -ForegroundColor Red
             } else {
-                $pathFail = ($d.PathResults | Where-Object { -not $_.Ok }).Count
+                $pathFail = @($d.PathResults | Where-Object { -not $_.Ok }).Count
                 $line = "    {0,-8}  {1,5} {2}" -f $app.Name, $d.Count, $app.Label
                 if ($d.Orphans -gt 0) {
                     $line += "   {0} orphan{1}" -f $d.Orphans, $(if ($d.Orphans -ne 1) { 's' } else { '' })
