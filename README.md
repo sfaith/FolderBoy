@@ -47,11 +47,11 @@ A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://
 | **Radarr** | v3 or later, running and reachable over the network |
 | **Lidarr** | v1 or later, running and reachable over the network |
 
-All three \*arr apps are optional — set `Enabled = $false` for any app you don't use.
+All three \*arr apps are optional: set `Enabled = $false` for any app you don't use.
 
 ### Network access
 
-FolderBoy communicates with each \*arr app over HTTP using its REST API. The machine running FolderBoy must be able to reach each app's URL (local, LAN, or UNC path). API traffic is JSON over HTTP — no special ports or credentials beyond the API key.
+FolderBoy communicates with each \*arr app over HTTP using its REST API. The machine running FolderBoy must be able to reach each app's URL (local, LAN, or UNC path). API traffic is JSON over HTTP: no special ports or credentials beyond the API key.
 
 ### File system access
 
@@ -360,17 +360,17 @@ TRaSH recommends including track number, title, and quality. Use the Servarr Wik
 ### First-time setup on an existing library
 
 1. Configure naming schemes in Sonarr, Radarr, and Lidarr (see above)
-2. **Sonarr Folder Renamer → Dry Run** — review which series folders would be renamed and tagged
-3. **Sonarr Folder Renamer → Live Rename** — apply
-4. **Radarr Folder Renamer → Dry Run** — review movie folder renames
-5. **Radarr Folder Renamer → Live Rename** — apply
-6. **Lidarr Folder Renamer → Dry Run** — review artist folder renames
-7. **Lidarr Folder Renamer → Live Rename** — apply
-8. **Orphan Scanner → Scan Only** — review the full orphan report
-9. **Orphan Scanner → Scan + Delete** — delete confirmed orphans
-10. **Media File Renamer → Dry Run (All apps)** — review which individual files would be renamed
-11. **Media File Renamer → Live Rename** — apply
-12. **Media Dashboard** — run after cleanup for a full baseline report
+2. **Sonarr Folder Renamer → Dry Run:** review which series folders would be renamed and tagged
+3. **Sonarr Folder Renamer → Live Rename:** apply
+4. **Radarr Folder Renamer → Dry Run:** review movie folder renames
+5. **Radarr Folder Renamer → Live Rename:** apply
+6. **Lidarr Folder Renamer → Dry Run:** review artist folder renames
+7. **Lidarr Folder Renamer → Live Rename:** apply
+8. **Orphan Scanner → Scan Only:** review the full orphan report
+9. **Orphan Scanner → Scan + Delete:** delete confirmed orphans
+10. **Media File Renamer → Dry Run (All apps):** review which individual files would be renamed
+11. **Media File Renamer → Live Rename:** apply
+12. **Media Dashboard:** run after cleanup for a full baseline report
 
 ### Ongoing maintenance
 
