@@ -44,7 +44,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **File Renamer summary tables -- Group-Object scriptblock** -- `Group-Object PropertyName`
   on `List[hashtable]` groups everything into one bucket (key access fails silently); all
   six `Group-Object` calls changed to `Group-Object { $_.PropertyName }` scriptblock form.
-  Summary tables now correctly show one row per series/movie/artist.
+  Summary tables now correctly show one row per series, movie, or artist.
 - **Full Run session log -- one entry per tool** -- previously joined all 8 tool results
   into a single session log line. Now each tool adds its own entry with individual
   timestamp and elapsed time.
@@ -78,7 +78,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **Per-item summary tables in Media File Renamer dry run output** -- after the
   full file-by-file listing, each sub-renamer now prints a compact summary table
-  showing every series / movie / artist with a file count. Makes it easy to scan
+  showing every series, movie, or artist with a file count. Makes it easy to scan
   a large library's rename scope at a glance without reading thousands of lines.
   Columns: name (55 chars) and file count. Sorted alphabetically.
 
@@ -98,7 +98,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     series (Sonarr), movie (Radarr), or artist (Lidarr) from a numbered list.
   - File naming format is controlled by each app's own Media Management settings;
     the tip at the start of each sub-renamer points to the relevant guide.
-  - Output grouped by series/movie/artist with clear From/To display.
+  - Output grouped by series, movie, or artist, with clear From/To display.
   - Confirmation prompt with file count before any live rename is sent.
   - Background-processing note and tip to check Activity > Queue in each app.
 - **`Invoke-ArrPost` helper** -- new generic POST function (parallel to the existing

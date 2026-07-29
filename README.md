@@ -55,7 +55,7 @@ FolderBoy communicates with each \*arr app over HTTP using its REST API. The mac
 
 ### File system access
 
-FolderBoy reads your media root folders directly from disk for the Cleaner, Orphan Scanner, and Dashboard Full mode. UNC paths (`\\SERVER\Share`) and local paths (`C:\Media`) are both supported. The user running FolderBoy needs read access to all configured paths, plus write access if you intend to use Live Rename or Live Delete.
+FolderBoy reads your media root folders directly from disk for the Cleaner, Orphan Scanner, and Dashboard Full mode. UNC paths (`\\SERVER\Share`) and local paths (`C:\Media`) are both supported. You need read access to all configured paths, plus write access if you intend to use Live Rename or Live Delete.
 
 ### Naming conventions (strongly recommended)
 
@@ -152,11 +152,11 @@ Renames individual media files inside your libraries to match each app's configu
 
 - **Dry Run mode** calls `GET /rename` and displays the full before/after list — zero changes made
 - **Live Rename mode** sends `POST /command` (RenameFiles / RenameArtist) and the app renames its own files in the background
-- Scope selection per app: rename all at once, or pick a specific series / movie / artist
-- No direct filesystem manipulation by FolderBoy — rename logic and error handling stays inside each \*arr app
+- Scope selection per app: rename all at once, or pick a specific series, movie, or artist
+- No direct filesystem manipulation by FolderBoy — rename logic and error handling stay inside each \*arr app
 - File naming format is controlled by each app's Media Management settings; configure those to TRaSH standards first
 
-> **Note on Lidarr speed:** Lidarr's `/rename` API returns track-level data and must be queried once per artist. On a large music library (700+ artists) this is inherently slower than Sonarr or Radarr — expect 5–10 minutes for a full check. This is normal.
+> **Note on Lidarr speed:** Lidarr's `/rename` API returns track-level data and must be queried once per artist. On a large music library (700+ artists) this makes the Lidarr check inherently slower than Sonarr or Radarr — expect 5–10 minutes for a full check. This wait time is expected, not an error.
 
 ---
 
@@ -295,7 +295,7 @@ Go to **Settings → Media Management → Show Advanced → Series Folder Format
 ```
 Example: `The Wire (2002) {imdb-tt0306414}`
 
-The `{imdb-{ImdbId}}` tag is what the Sonarr Folder Renamer adds and the Orphan Scanner uses for high-confidence matching. Without it, FolderBoy falls back to name-only matching.
+The `{imdb-{ImdbId}}` tag is what the Sonarr Folder Renamer adds and the Orphan Scanner uses for high-confidence matching. Without the tag, FolderBoy falls back to name-only matching.
 
 **Episode Naming Format**
 Go to **Settings → Media Management → Episode Naming**
@@ -441,7 +441,7 @@ The folder name and Sonarr's stored title differ enough that FolderBoy will not 
 
 **Lidarr File Renamer is slow**
 
-This is normal. Lidarr's `/rename` API must be queried once per artist and returns track-level data — 700+ artists takes 5–10 minutes. No fix needed.
+This wait time is expected. Lidarr's `/rename` API must be queried once per artist and returns track-level data — 700+ artists takes 5–10 minutes. No fix needed.
 
 **Execution policy error**
 
