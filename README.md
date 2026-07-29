@@ -148,7 +148,7 @@ Generates a detailed statistics report for your media libraries. Select an app (
 Report is automatically saved to `Logs\FolderBoy_Dashboard_*.log`.
 
 ### 8. Media File Renamer
-Renames individual media files inside your libraries to match each app's configured naming scheme (TRaSH Guides standard). FolderBoy uses each app's own `/rename` preview API to show you exactly what will change before anything happens. It then sends a rename command — the \*arr app performs all the actual file moves.
+Renames individual media files inside your libraries to match each app's configured naming scheme (TRaSH Guides standard). FolderBoy uses each app's own `/rename` preview API to show you exactly what will change before anything happens. FolderBoy then sends a rename command. The \*arr app performs all the actual file moves.
 
 - **Dry Run mode** calls `GET /rename` and displays the full before/after list — zero changes made
 - **Live Rename mode** sends `POST /command` (RenameFiles / RenameArtist) and the app renames its own files in the background
