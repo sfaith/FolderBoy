@@ -65,9 +65,9 @@ Notes:
 - [c] **4.2** `SuppressMissing = $true` — MISSING entries disappear from output, count still shown in summary *(code: CF1 — `SonarrConfig.SuppressMissing` guard confirmed in renamer)*
 - [c] **4.3** `SuppressMissing = $false` — MISSING entries appear normally *(code: CF1)*
 - [ ] **4.4** Create a test series folder without an `{imdb-}` tag that matches a Sonarr title — Dry Run shows `[WOULD RENAME]`
-- [ ] **4.5** `[MISMATCH]` case — rename a folder so it doesn't match Sonarr title, verify it's skipped with explanation
+- [ ] **4.5** `[MISMATCH]` case — rename a folder so it does not match Sonarr title, verify it is skipped with explanation
 
-> **Note:** `Test-TitleMatch` was fixed in v0.4.6 — folders named with a year (e.g. `The Wire (2002)`) but no imdb tag now correctly match against the Sonarr title+year rather than producing a false `[MISMATCH]`. 4.5 should confirm a *genuinely* mismatched folder still gets skipped.
+> **Note:** `Test-TitleMatch` was fixed in v0.4.6 — folders named with a year (for example, `The Wire (2002)`) but no imdb tag now correctly match against the Sonarr title+year rather than producing a false `[MISMATCH]`. 4.5 should confirm a *genuinely* mismatched folder still gets skipped.
 
 Notes:
 ```

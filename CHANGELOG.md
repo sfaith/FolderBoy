@@ -12,7 +12,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Planned
 - Scheduled / unattended execution support (Windows Task Scheduler)
 - Radarr orphan scanner improvements for libraries with parenthetical folder suffixes
-- Naming Config Manager -- view and apply TRaSH-recommended naming schemes via API
+- Naming Config Manager -- view and apply TRaSH-recommended naming schemes through the API
 - Quality Upgrade Scanner -- surface items below quality profile cutoff across all apps
 - Duplicate Detector
 - Menu consistency: "All apps" / "All libraries" option to appear after Sonarr, Radarr,
@@ -116,7 +116,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   File Renamer → Radarr File Renamer → Lidarr File Renamer → Media Dashboard.
   Three run modes: (1) Attended -- prompts per tool; (2) Dry Run All -- no prompts,
   all dry runs; (3) Live All -- requires typing `CONFIRM`, clearly explains what will
-  and won't be changed (Orphan Scanner stays Scan Only; Dashboard runs Quick).
+  and will not be changed (Orphan Scanner stays Scan Only; Dashboard runs Quick).
 - **`Invoke-MediaDashboardDirect`** -- unattended entry point for the Dashboard used
   by Full Run; accepts `-FullScan` parameter, bypasses interactive menus.
 - **`Get-FullRunMode` helper** -- inner function used by Full Run to select tool mode
@@ -154,8 +154,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - **Lidarr Dashboard album display** -- the album line now shows monitored count,
   on-disk count, and not-downloaded count separately, making the gap between
-  Lidarr's full catalogue and what is actually on disk immediately clear.
-  e.g. `8,840 monitored  |  4,397 on disk  (4,443 not downloaded)`. Yellow
+  Lidarr's full catalogue and what is on disk immediately clear
+  (for example, `8,840 monitored  |  4,397 on disk  (4,443 not downloaded)`). Yellow
   when there are undownloaded albums, white when all monitored albums are on disk.
 - **Lidarr Dashboard track count** -- added `Tracks on disk` line showing the
   total track file count summed from album statistics, enabling direct comparison
@@ -205,7 +205,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a folder named `The Wire (2002)` against a Sonarr title `The Wire` (year stored
   separately) would produce a false `[MISMATCH]` and be skipped. The function now
   also compares the folder name against the clean Sonarr title reconstructed with
-  the series year (e.g. `The Wire (2002)`), correctly identifying these as matches.
+  the series year (for example, `The Wire (2002)`), correctly identifying these as matches.
   Existing behavior for disambiguation-year titles (`The Twilight Zone (1985)`) and
   for direct-match titles is unchanged.
 - **`Invoke-SonarrRenamer`** -- updated `Test-TitleMatch` call to pass `$year` so
@@ -291,15 +291,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **Orphan Scanner scope selection** -- choose All Libraries, Radarr only, Sonarr
   only, or Lidarr only before each scan.
-- **Lidarr trailing-period fix** -- artist names ending in a period (e.g. `T.I.`,
+- **Lidarr trailing-period fix** -- artist names ending in a period (for example, `T.I.`,
   `Dinosaur Jr.`) generate folder names with a trailing period that Windows handles
   inconsistently. FolderBoy now strips trailing periods from generated names and
   treats existing folders whose name differs only by a trailing period as already
   correct (no rename needed).
 
 ### Changed
-- Six app-specific API helpers (`Invoke-SonarrGet`, `Invoke-RadarrGet`, etc.)
-  consolidated into two generic helpers: `Invoke-ArrGet` and `Invoke-ArrPut`.
+- Six app-specific API helpers (`Invoke-SonarrGet`, `Invoke-RadarrGet`, and four
+  others) consolidated into two generic helpers: `Invoke-ArrGet` and `Invoke-ArrPut`.
   API version is stamped onto each config hashtable at startup.
 - Folder size calculation deferred to display time in all three scanners.
 - Lidarr fuzzy-match lookup pre-computed as a hashtable at library load time.
@@ -312,8 +312,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - **Lidarr Folder Renamer (Tool 4)** -- renames artist folders to `{Artist Name}`
-  format and updates Lidarr paths via API. Includes Dry Run and Live Rename modes,
-  conflict detection, and API rollback on failure.
+  format and updates Lidarr paths through the API. Includes Dry Run and Live Rename
+  modes, conflict detection, and API rollback on failure.
 
 ### Changed
 - Sonarr Tagger renamed to **Sonarr Folder Renamer** throughout (tool name, log
@@ -339,7 +339,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - **Orphan Scanner (Tool 2)** -- scans library paths and cross-references against
-  each `*arr` app. Categorises folders as NOT IN ARR (high confidence), NEEDS REVIEW
+  each `*arr` app. Categorizes folders as NOT IN ARR (high confidence), NEEDS REVIEW
   (medium), or NAME MATCHED (low). Optional interactive delete with queue-and-confirm
   flow.
 - **Full Run (Tool 3 at the time)** -- runs Sonarr Renamer then Orphan Scanner.
@@ -354,6 +354,6 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   recognized media files. Dry Run and Live Delete modes. Configurable presets and
   Custom mode. Extension tally for non-media files found in flagged folders.
 - **Sonarr Folder Tagger (Tool 2)** -- renames series folders to
-  `{Series TitleYear} {imdb-{ImdbId}}` format and updates Sonarr paths via API.
+  `{Series TitleYear} {imdb-{ImdbId}}` format and updates Sonarr paths through the API.
 - Config file system with example template and gitignore.
 - Log files written to `Logs\` subfolder with timestamps.

@@ -2,7 +2,12 @@
 
 ![Version](https://img.shields.io/badge/version-0.6.3-blue) ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey) ![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-blue) ![License](https://img.shields.io/badge/license-GPL--3.0-green)
 
-A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy helps you keep your library clean by renaming series, movie, and artist folders to standard formats, finding orphaned media, removing folders that contain no recognized media files, and generating detailed library statistics.
+A PowerShell toolkit for managing [Sonarr](https://sonarr.tv), [Radarr](https://radarr.video), and [Lidarr](https://lidarr.audio) media libraries. FolderBoy keeps your library clean:
+
+- Renames series, movie, and artist folders to standard formats
+- Finds orphaned media
+- Removes folders that contain no recognized media files
+- Generates detailed library statistics
 
 ---
 
@@ -46,15 +51,15 @@ Scans your media root folders and identifies subfolders that contain no media fi
 - Dry Run mode shows exactly what would be deleted before you commit
 
 ### 2. Sonarr Folder Renamer
-Finds Sonarr series folders missing an `{imdb-ttXXXXXXX}` ID tag, renames them on disk to match Sonarr's configured Series Folder Format, and updates the series path in Sonarr via API so everything stays in sync.
+Finds Sonarr series folders missing an `{imdb-ttXXXXXXX}` ID tag. Renames them on disk to match Sonarr's configured Series Folder Format. Updates the series path in Sonarr through the API so everything stays in sync.
 
 - Only renames folders missing an ID tag — already-tagged folders are skipped
-- Detects folders where the name doesn't match Sonarr's title and skips them rather than renaming incorrectly
+- Detects folders where the name does not match Sonarr's title and skips them rather than renaming incorrectly
 - Automatically rolls back disk renames if the Sonarr API update fails
 - Dry Run mode previews all renames before applying
 
 ### 3. Radarr Folder Renamer
-Finds Radarr movie folders that don't match the recommended naming format and renames them on disk, then updates the movie path in Radarr via API so everything stays in sync.
+Finds Radarr movie folders that don't match the recommended naming format. Renames them on disk. Updates the movie path in Radarr through the API so everything stays in sync.
 
 - Supports two target formats: Minimum (`{Movie CleanTitle} ({Release Year})`) and Plex (`{Movie CleanTitle} ({Release Year}) {imdb-{ImdbId}}`)
 - Only renames folders that don't already match the target format
@@ -62,7 +67,7 @@ Finds Radarr movie folders that don't match the recommended naming format and re
 - Dry Run mode previews all renames before applying
 
 ### 4. Lidarr Folder Renamer
-Finds Lidarr artist folders that don't match the recommended `{Artist Name}` format and renames them on disk, then updates the artist path in Lidarr via API so everything stays in sync.
+Finds Lidarr artist folders that don't match the recommended `{Artist Name}` format. Renames them on disk. Updates the artist path in Lidarr through the API so everything stays in sync.
 
 - Handles colon and illegal character sanitization consistently with Sonarr and Radarr
 - Automatically rolls back disk renames if the Lidarr API update fails
@@ -88,12 +93,21 @@ Compares what is on disk against what each \*arr app manages. Produces a categor
 | NAME MATCHED | No ID tag but name matched — counted as matched, shown for awareness |
 
 ### 6. Full Run
-Runs all 8 tools in sequence: Sonarr Folder Renamer → Radarr Folder Renamer → Lidarr Folder Renamer → Orphan Scanner → Sonarr File Renamer → Radarr File Renamer → Lidarr File Renamer → Media Dashboard.
+Runs all 8 tools in sequence:
+
+1. Sonarr Folder Renamer
+2. Radarr Folder Renamer
+3. Lidarr Folder Renamer
+4. Orphan Scanner
+5. Sonarr File Renamer
+6. Radarr File Renamer
+7. Lidarr File Renamer
+8. Media Dashboard
 
 Three run modes:
 - **Attended** — prompts for Dry Run or Live for each tool individually (safest)
 - **Dry Run All** — runs every tool in Dry Run mode without further prompts
-- **Live All** — runs every tool in Live mode; requires typing `CONFIRM`; clearly explains what will and won't change (Orphan Scanner always Scan Only; Dashboard always Quick)
+- **Live All** — runs every tool in Live mode; requires typing `CONFIRM`; clearly explains what will and will not change (Orphan Scanner always Scan Only; Dashboard always Quick)
 
 Disabled apps are skipped automatically.
 
@@ -106,7 +120,7 @@ Generates a detailed statistics report for your media libraries. Select an app (
 Report is automatically saved to `Logs\FolderBoy_Dashboard_*.log`.
 
 ### 8. Media File Renamer
-Renames individual media files inside your libraries to match each app's configured naming scheme (TRaSH Guides standard). FolderBoy uses each app's own `/rename` preview API to show you exactly what will change before anything happens, then sends a rename command — the \*arr app performs all the actual file moves.
+Renames individual media files inside your libraries to match each app's configured naming scheme (TRaSH Guides standard). FolderBoy uses each app's own `/rename` preview API to show you exactly what will change before anything happens. It then sends a rename command — the \*arr app performs all the actual file moves.
 
 - **Dry Run mode** calls `GET /rename` and displays the full before/after list — zero changes made
 - **Live Rename mode** sends `POST /command` (RenameFiles / RenameArtist) and the app renames its own files in the background
@@ -161,7 +175,7 @@ Double-click `FolderBoy.bat`, or run in PowerShell:
 .\FolderBoy.ps1
 ```
 
-If you see an execution policy error when running the `.ps1` directly, either use the `.bat` launcher (which bypasses the policy automatically) or run the following once as administrator:
+If you see an execution policy error when running the `.ps1` directly, use the `.bat` launcher instead — it bypasses the policy automatically. Or run the following once as administrator:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope LocalMachine
@@ -175,7 +189,7 @@ All settings live in `FolderBoy.config.ps1`. The main script (`FolderBoy.ps1`) l
 
 ### Enabling and disabling apps
 
-Each \*arr app has an `Enabled` flag. Set it to `$false` if you don't use that app and FolderBoy will skip it entirely:
+Each \*arr app has an `Enabled` flag. Set it to `$false` if you don't use that app, and FolderBoy will skip it entirely:
 
 ```powershell
 $LidarrConfig = @{
@@ -248,7 +262,7 @@ The last preset is always a **Custom** option that lets you enter extensions int
 
 FolderBoy works best when your \*arr apps use the naming schemes recommended by [TRaSH Guides](https://trash-guides.info). These formats embed metadata (IMDb/TVDB IDs) that FolderBoy uses for reliable matching and are the community best-practice standard.
 
-Configure naming schemes **before** running any of the Folder Renamers or File Renamers. The Folder Renamers will bring your existing folders into line with whatever format you set, and the File Renamer will apply each app's configured naming scheme to individual files.
+Configure naming schemes **before** running any of the Folder Renamers or File Renamers. The Folder Renamers bring your existing folders into line with whatever format you set. The File Renamer applies each app's configured naming scheme to individual files.
 
 ---
 
@@ -313,7 +327,7 @@ Go to **Settings → Media Management → Show Advanced**
 ```
 {Album Title} {(Album Disambiguation)}
 ```
-The disambiguation suffix (e.g. `(Deluxe Edition)`, `(2023 Remaster)`) prevents collisions between multiple releases with the same title.
+The disambiguation suffix (for example, `(Deluxe Edition)`, `(2023 Remaster)`) prevents collisions between multiple releases with the same title.
 
 **Track Naming Format:**
 TRaSH recommends including track number, title, and quality. Use the Servarr Wiki for the recommended string:
@@ -341,7 +355,11 @@ TRaSH recommends including track number, title, and quality. Use the Servarr Wik
 
 ### Ongoing maintenance
 
-Use **option 6 (Full Run)** for regular maintenance. Select **Dry Run All** for a fast, safe check of what has drifted across all 8 tools. Select **Attended** to choose Dry Run or Live for each tool individually as it runs. Use **Live All** only when you're ready to apply everything in one pass.
+Use **option 6 (Full Run)** for regular maintenance:
+
+- **Dry Run All** — fast, safe check of what has drifted across all 8 tools
+- **Attended** — choose Dry Run or Live for each tool individually as it runs
+- **Live All** — apply everything in one pass, only when you are ready
 
 ---
 
@@ -403,7 +421,7 @@ FolderBoy sends the request body as UTF-8 bytes to handle series with non-ASCII 
 
 **Title mismatch warnings in the Sonarr Folder Renamer**
 
-The folder name and Sonarr's stored title differ enough that FolderBoy won't rename automatically. Rename the folder manually to match the Sonarr title, then re-run the Sonarr Folder Renamer.
+The folder name and Sonarr's stored title differ enough that FolderBoy will not rename automatically. Rename the folder manually to match the Sonarr title, then re-run the Sonarr Folder Renamer.
 
 **Lidarr File Renamer is slow**
 
